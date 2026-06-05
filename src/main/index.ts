@@ -31,6 +31,7 @@ if (process.platform === 'darwin') {
   }
 }
 
+import { APP_ID, APP_NAME, APP_PROTOCOL } from './config/appIdentity';
 import {
   autoStartHapi,
   cleanupAllResources,
@@ -66,33 +67,37 @@ let isQuittingCleanupRunning = false;
 const isDev = !app.isPackaged;
 const FORCE_EXIT_TIMEOUT_MS = 8000;
 
+app.setName(APP_NAME);
+
 function sanitizeProfileName(input: string): string {
   const trimmed = input.trim();
   if (!trimmed) return '';
   return trimmed.replace(/[^a-zA-Z0-9._-]+/g, '-');
 }
 
-// In dev mode, use an isolated userData dir to avoid clashing with the packaged app.
-// This prevents Chromium/Electron profile locking from causing an "empty" localStorage in later instances.
+// Use an isolated userData dir so this personalized build does not share
+// settings, cache, or the single-instance profile lock with official EnsoAI.
 if (isDev) {
   const profile = sanitizeProfileName(process.env.ENSOAI_PROFILE || '') || 'dev';
-  app.setPath('userData', join(app.getPath('appData'), `${app.getName()}-${profile}`));
+  app.setPath('userData', join(app.getPath('appData'), `${APP_NAME}-${profile}`));
+} else {
+  app.setPath('userData', join(app.getPath('appData'), APP_NAME));
 }
 
 // Register URL scheme handler (must be done before app is ready)
 if (process.defaultApp) {
   if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient('enso', process.execPath, [process.argv[1]]);
+    app.setAsDefaultProtocolClient(APP_PROTOCOL, process.execPath, [process.argv[1]]);
   }
 } else {
-  app.setAsDefaultProtocolClient('enso');
+  app.setAsDefaultProtocolClient(APP_PROTOCOL);
 }
 
 // Parse URL and extract path
 function parseEnsoUrl(url: string): string | null {
   try {
     const parsed = new URL(url);
-    if (parsed.protocol === 'enso:') {
+    if (parsed.protocol === `${APP_PROTOCOL}:`) {
       const path = parsed.searchParams.get('path');
       if (path) {
         return decodeURIComponent(path);
@@ -104,7 +109,7 @@ function parseEnsoUrl(url: string): string | null {
   return null;
 }
 
-// Parse focus URL (enso://focus?session=<id>)
+// Parse focus URL (enso-keming://focus?session=<id>)
 interface FocusSessionParams {
   sessionId: string;
 }
@@ -112,7 +117,7 @@ interface FocusSessionParams {
 function parseFocusUrl(url: string): FocusSessionParams | null {
   try {
     const parsed = new URL(url);
-    if (parsed.protocol === 'enso:') {
+    if (parsed.protocol === `${APP_PROTOCOL}:`) {
       const host = parsed.host;
       const pathname = parsed.pathname;
       // Match //focus or host === 'focus'
@@ -180,7 +185,7 @@ function handleCommandLineArgs(argv: string[]): void {
       }
       return;
     }
-    if (arg.startsWith('enso://')) {
+    if (arg.startsWith(`${APP_PROTOCOL}://`)) {
       // Check for focus URL first
       const focusParams = parseFocusUrl(arg);
       if (focusParams) {
@@ -297,7 +302,7 @@ async function init(): Promise<void> {
   const logLevel = (ensoSettings?.state?.logLevel as 'error' | 'warn' | 'info' | 'debug') ?? 'info';
   const logRetentionDays = (ensoSettings?.state?.logRetentionDays as number) ?? 7;
   initLogger(loggingEnabled, logLevel, logRetentionDays);
-  log.info('EnsoAI started');
+  log.info(`${APP_NAME} started`);
 
   // Check Git installation
   const gitInstalled = await checkGitInstalled();
@@ -314,7 +319,7 @@ async function init(): Promise<void> {
 
 app.whenReady().then(async () => {
   // Set app user model id for windows
-  electronApp.setAppUserModelId('com.ensoai.app');
+  electronApp.setAppUserModelId(APP_ID);
 
   // Allow EnhancedInput temp images to be previewed via local-file:// protocol.
   // NOTE: This is registered here (in the same module as the protocol handler)

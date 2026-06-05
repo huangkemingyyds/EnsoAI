@@ -91,12 +91,12 @@ mac:
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   notarize: true
-  # Register enso:// URL scheme
+  # Register enso-keming:// URL scheme
   extendInfo:
     CFBundleURLTypes:
-      - CFBundleURLName: EnsoAI
+      - CFBundleURLName: EnsoAI-Keming
         CFBundleURLSchemes:
-          - enso
+          - enso-keming
 
 dmg:
   sign: true
@@ -126,7 +126,7 @@ nsis:
   deleteAppDataOnUninstall: false
   # Enable differential download for NSIS
   differentialPackage: true
-  # Register enso:// URL scheme
+  # Register enso-keming:// URL scheme
   include: build/installer.nsh
 
 linux:
@@ -138,9 +138,9 @@ linux:
   executableName: enso-ai
   maintainer: EnsoAI Team <crolin-zhang@users.noreply.github.com>
   category: Development
-  # Register enso:// URL scheme
+  # Register enso-keming:// URL scheme
   mimeTypes:
-    - x-scheme-handler/enso
+    - x-scheme-handler/enso-keming
 
 # publish:
 #   provider: github
