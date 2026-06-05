@@ -1,6 +1,6 @@
-appId: com.ensoai.app
-productName: EnsoAI
-copyright: Copyright © 2025
+appId: com.keming.ensoai
+productName: EnsoAI-Keming
+copyright: Copyright 2026 Keming
 
 directories:
   output: dist
@@ -142,8 +142,8 @@ linux:
   mimeTypes:
     - x-scheme-handler/enso
 
-publish:
-  provider: github
-  owner: J3n5en
-  repo: EnsoAI
-  releaseType: draft
+# publish:
+#   provider: github
+#   owner: J3n5en
+#   repo: EnsoAI
+#   releaseType: draft
