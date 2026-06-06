@@ -215,7 +215,7 @@ export function IntegrationSettings({ scrollToProvider }: IntegrationSettingsPro
             <div className="space-y-0.5">
               <span className="text-sm font-medium">{t('Enhanced Input')}</span>
               <p className="text-xs text-muted-foreground">
-                {t('Enable enhanced input panel with multi-line editing and image support')}
+                {t('Enable the Agent input panel with multi-line editing and attachments')}
               </p>
             </div>
             <Switch
@@ -241,7 +241,7 @@ export function IntegrationSettings({ scrollToProvider }: IntegrationSettingsPro
                   <div className="space-y-0.5">
                     <span className="text-sm font-medium">{t('Manual')}</span>
                     <p className="text-xs text-muted-foreground">
-                      {t('Only open via Ctrl+G shortcut, Esc to close')}
+                      {t('Only open supported Agent Sessions via Ctrl+G, Esc to close')}
                     </p>
                   </div>
                 </label>
@@ -256,7 +256,7 @@ export function IntegrationSettings({ scrollToProvider }: IntegrationSettingsPro
                   <div className="space-y-0.5">
                     <span className="text-sm font-medium">{t('Always Show')}</span>
                     <p className="text-xs text-muted-foreground">
-                      {t('Panel stays visible, remains open after sending')}
+                      {t('Panel stays visible for supported Agent Sessions after sending')}
                     </p>
                   </div>
                 </label>
@@ -279,7 +279,9 @@ export function IntegrationSettings({ scrollToProvider }: IntegrationSettingsPro
                   <div className="space-y-0.5">
                     <span className="text-sm font-medium">{t('Hide While Running')}</span>
                     <p className="text-xs text-muted-foreground">
-                      {t('Auto-hide when agent is running, show when idle (requires Stop Hook)')}
+                      {t(
+                        'Auto-hide while running; completion auto-popup requires an Agent completion signal'
+                      )}
                     </p>
                   </div>
                 </label>

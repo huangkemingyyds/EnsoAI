@@ -14,6 +14,12 @@ import {
 } from '@/components/ui/empty';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '@/components/ui/tooltip';
 import { useI18n } from '@/i18n';
+import {
+  resolveAgentCapabilities,
+  shouldAutoOpenEnhancedInput,
+  shouldRenderEnhancedInput,
+  shouldUseSlashCommandCompletion,
+} from '@/lib/agentCapabilities';
 import { pauseFocusLock, restoreFocusIfLocked } from '@/lib/focusLock';
 import { defaultDarkTheme, getXtermTheme } from '@/lib/ghosttyTheme';
 import { matchesKeybinding } from '@/lib/keybinding';
@@ -635,13 +641,19 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
       const newSession = createSession(repoPath, cwd, defaultAgentId, customAgents, agentSettings);
       addSession(newSession);
 
-      // Auto open enhanced input for new Claude session if enabled
-      const baseAgentId = defaultAgentId.replace(/-hapi$/, '').replace(/-happy$/, '');
+      // Auto open enhanced input for agents that support it.
+      const capabilities = resolveAgentCapabilities(defaultAgentId, {
+        customAgents,
+        agentSettings,
+      });
       const autoPopupMode = claudeCodeIntegration.enhancedInputAutoPopup;
       if (
-        baseAgentId === 'claude' &&
-        claudeCodeIntegration.enhancedInputEnabled &&
-        (autoPopupMode === 'always' || autoPopupMode === 'hideWhileRunning')
+        shouldAutoOpenEnhancedInput({
+          globalEnabled: claudeCodeIntegration.enhancedInputEnabled,
+          capabilities,
+          autoPopupMode,
+          hasCompletionSignal: autoPopupMode === 'always',
+        })
       ) {
         setEnhancedInputOpen(newSession.id, true);
       }
@@ -827,14 +839,22 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
         // Auto popup requires:
         // 1. enhancedInputEnabled
         // 2. enhancedInputAutoPopup is 'always' or 'hideWhileRunning'
-        // 3. stopHookEnabled (for Claude Code)
+        // 3. Agent Completion Signal (Claude Stop Hook in this listener)
         // 4. NOT in 'waiting_input' state (AskUserQuestion or Permission Prompt active)
         const autoPopupMode = claudeCodeIntegration.enhancedInputAutoPopup;
         const activityState = getActivityState(session.cwd);
+        const capabilities = resolveAgentCapabilities(session.agentId, {
+          customAgents,
+          agentSettings,
+        });
+        const hasClaudeCompletionSignal = session.agentCommand.startsWith('claude');
         const shouldAutoPopup =
-          session.agentId === 'claude' &&
-          claudeCodeIntegration.enhancedInputEnabled &&
-          (autoPopupMode === 'always' || autoPopupMode === 'hideWhileRunning') &&
+          shouldAutoOpenEnhancedInput({
+            globalEnabled: claudeCodeIntegration.enhancedInputEnabled,
+            capabilities,
+            autoPopupMode,
+            hasCompletionSignal: hasClaudeCompletionSignal,
+          }) &&
           claudeCodeIntegration.stopHookEnabled &&
           activityState !== 'waiting_input';
 
@@ -868,6 +888,8 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
     getActivityState,
     claudeCodeIntegration,
     setEnhancedInputOpen,
+    customAgents,
+    agentSettings,
   ]);
 
   // Note: EnhancedInput open state is now stored per-session in the store
@@ -1040,12 +1062,16 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
 
       addSession(newSession);
 
-      // Auto open enhanced input for new Claude session if enabled
+      // Auto open enhanced input for agents that support it.
+      const capabilities = resolveAgentCapabilities(agentId, { customAgents, agentSettings });
       const autoPopupMode = claudeCodeIntegration.enhancedInputAutoPopup;
       if (
-        baseId === 'claude' &&
-        claudeCodeIntegration.enhancedInputEnabled &&
-        (autoPopupMode === 'always' || autoPopupMode === 'hideWhileRunning')
+        shouldAutoOpenEnhancedInput({
+          globalEnabled: claudeCodeIntegration.enhancedInputEnabled,
+          capabilities,
+          autoPopupMode,
+          hasCompletionSignal: autoPopupMode === 'always',
+        })
       ) {
         setEnhancedInputOpen(newSession.id, true);
       }
@@ -1754,6 +1780,23 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
           isActiveGroup && group.activeSessionId
             ? enhancedInputSenderRef.current.get(group.activeSessionId)
             : undefined;
+        const activeSession = group.activeSessionId
+          ? currentWorktreeSessions.find((session) => session.id === group.activeSessionId)
+          : undefined;
+        const activeCapabilities = activeSession
+          ? resolveAgentCapabilities(activeSession.agentId, { customAgents, agentSettings })
+          : null;
+        const enhancedInputOpen = group.activeSessionId
+          ? getEnhancedInputState(group.activeSessionId).open
+          : false;
+        const renderEnhancedInput =
+          group.activeSessionId != null &&
+          activeCapabilities != null &&
+          shouldRenderEnhancedInput({
+            globalEnabled: claudeCodeIntegration.enhancedInputEnabled,
+            capabilities: activeCapabilities,
+            open: enhancedInputOpen,
+          });
 
         return (
           <div
@@ -1786,17 +1829,18 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
             />
             {/* Bottom bar: Enhanced Input + Status Line, height measured for terminal offset */}
             <GroupBottomBar groupId={group.id} onHeightChange={setStatusLineHeightsByGroupId}>
-              {isActiveGroup &&
-                claudeCodeIntegration.enhancedInputEnabled &&
-                group.activeSessionId != null && (
-                  <EnhancedInputContainer
-                    sessionId={group.activeSessionId}
-                    onSend={(content, imagePaths) => {
-                      sender?.(content, imagePaths);
-                    }}
-                    isActive={isActive}
-                  />
-                )}
+              {isActiveGroup && renderEnhancedInput && group.activeSessionId != null && (
+                <EnhancedInputContainer
+                  sessionId={group.activeSessionId}
+                  onSend={(content, imagePaths) => {
+                    sender?.(content, imagePaths);
+                  }}
+                  isActive={isActive}
+                  slashCommandCompletionEnabled={shouldUseSlashCommandCompletion(
+                    activeCapabilities
+                  )}
+                />
+              )}
               {statusLineEnabled && <StatusLine sessionId={group.activeSessionId} />}
             </GroupBottomBar>
           </div>

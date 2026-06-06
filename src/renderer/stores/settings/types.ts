@@ -205,7 +205,7 @@ export interface ClaudeCodeIntegrationSettings {
   enableProviderWatcher: boolean; // Enable watcher for Claude Code settings.json changes
   enableProviderDisableFeature: boolean; // Enable/disable the provider temporary disable feature
   providers: import('@shared/types').ClaudeProvider[];
-  enhancedInputEnabled: boolean; // Enable enhanced input panel for Claude Code
+  enhancedInputEnabled: boolean; // Enable Enhanced Input panel for Agent Sessions
   enhancedInputAutoPopup: 'always' | 'hideWhileRunning' | 'manual'; // Enhanced input auto popup mode
 }
 

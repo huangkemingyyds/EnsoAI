@@ -1,0 +1,109 @@
+请帮我把 EnsoAI 当前只支持 Claude 的 Enhanced Input 增强输入面板，重构成所有 Agent 可复用的通用输入能力。
+
+当前情况：
+1. Enhanced Input 现在主要绑定 ClaudeCodeIntegration。
+2. AgentPanel.tsx / AgentTerminal.tsx 里存在 agentId === 'claude' 的判断。
+3. Codex / Gemini 当前走原生终端输入，没有接入底部增强输入框。
+4. 设置页的增强输入开关目前在 Claude Code 集成下面，只影响 Claude。
+
+我的目标：
+让用户在 UI 上无论选择 Claude、Codex、Gemini、自定义 Agent，都可以使用同一个底部增强输入框。
+但底层发送格式根据不同 Agent 自动适配。
+
+请不要简单粗暴删除 agentId === 'claude'。
+请按下面方案设计：
+
+一、抽象通用能力
+
+在 AgentMetadata 或 AgentRegistry 中增加 capabilities.enhancedInput 配置，例如：
+
+capabilities: {
+  enhancedInput: {
+    supported: boolean,
+    imageInput?: {
+      supported: boolean,
+      mode: "append_to_prompt" | "cli_arg" | "prompt_with_arg"
+    },
+    multiline?: boolean
+  }
+}
+
+二、默认配置
+
+Claude：
+enhancedInput.supported = true
+imageInput.mode = "append_to_prompt"
+
+Codex：
+enhancedInput.supported = true
+imageInput.mode = "append_to_prompt"
+
+Gemini：
+enhancedInput.supported = true
+imageInput.mode = "prompt_with_arg"
+
+自定义 Agent：
+如果用户没有配置，则默认：
+enhancedInput.supported = true
+imageInput.mode = "append_to_prompt"
+
+三、UI 显示逻辑
+
+把原来的：
+
+agentId === 'claude'
+
+改成根据能力判断：
+
+agentMetadata.capabilities.enhancedInput.supported === true
+
+也就是说：
+不要写死 Claude。
+应该由 Agent 配置决定是否显示增强输入面板。
+
+四、发送逻辑
+
+新增一个通用的输入适配层，例如：
+
+formatEnhancedInputForAgent(agent, text, images)
+
+它根据当前 Agent 的 capabilities 生成最终发送内容。
+
+例如：
+
+append_to_prompt:
+用户文本 + 换行 + 图片路径
+
+prompt_with_arg:
+用户文本和图片路径作为独立参数或按当前 Gemini CLI 格式发送
+
+cli_arg:
+把图片路径作为 CLI 参数发送，例如 --image image.png
+
+五、兼容现有 Claude 行为
+
+要求：
+1. 不破坏 Claude 当前 Enhanced Input 功能。
+2. Claude 原有图片上传、多行输入、运行中自动隐藏逻辑尽量保持。
+3. Codex / Gemini 先实现最小可用版本：底部输入框可以输入文本并发送到对应终端。
+4. 图片上传如果某个 Agent 格式不确定，先 fallback 到 append_to_prompt。
+5. 如果 supported=false，则 UI 提示当前 Agent 不支持增强输入。
+
+六、设置页面调整
+
+不要再只把 Enhanced Input 放在 Claude Code 集成下面。
+
+请改成：
+1. 全局设置：启用增强输入面板
+2. 或 Agent 级别设置：每个 Agent 是否启用增强输入
+
+但第一阶段可以先保持现有设置，只是把显示逻辑从 Claude 写死改成 capabilities 判断。
+
+七、修改完成后请说明：
+
+1. 修改了哪些文件
+2. 删除或替换了哪些 agentId === 'claude' 判断
+3. Claude / Codex / Gemini 分别如何发送增强输入
+4. 图片上传在不同 Agent 下如何处理
+5. 是否兼容原来的 Claude Enhanced Input
+6. 还有哪些地方仍然是 Claude 专用逻辑

@@ -1,3 +1,24 @@
+export type EnhancedInputImageMode = 'append_to_prompt' | 'cli_arg' | 'prompt_with_arg';
+
+export interface EnhancedInputCapability {
+  supported: boolean;
+  imageInput?: {
+    supported: boolean;
+    mode: EnhancedInputImageMode;
+  };
+  multiline?: boolean;
+  slashCommandCompletion?: boolean;
+}
+
+export interface AgentCapabilities {
+  chat: boolean;
+  codeEdit: boolean;
+  terminal: boolean;
+  fileRead: boolean;
+  fileWrite: boolean;
+  enhancedInput?: EnhancedInputCapability;
+}
+
 export interface AgentMetadata {
   id: string;
   name: string;
@@ -5,13 +26,7 @@ export interface AgentMetadata {
   icon: string;
   binary: string;
   defaultModel?: string;
-  capabilities: {
-    chat: boolean;
-    codeEdit: boolean;
-    terminal: boolean;
-    fileRead: boolean;
-    fileWrite: boolean;
-  };
+  capabilities: AgentCapabilities;
 }
 
 export interface AgentMessage {

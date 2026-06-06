@@ -4,14 +4,20 @@ import {
   TerminalSearchBar,
   type TerminalSearchBarRef,
 } from '@/components/terminal/TerminalSearchBar';
+import { toastManager } from '@/components/ui/toast';
 import { useFileDrop } from '@/hooks/useFileDrop';
 import { useTerminalScrollToBottom } from '@/hooks/useTerminalScrollToBottom';
 import { useXterm } from '@/hooks/useXterm';
 import { useI18n } from '@/i18n';
+import {
+  getEnhancedInputShortcutAction,
+  resolveAgentCapabilities,
+  shouldHandleEnhancedInputShortcut,
+} from '@/lib/agentCapabilities';
+import { formatEnhancedInputForAgent } from '@/lib/enhancedInputFormatter';
 import { type OutputState, useAgentSessionsStore } from '@/stores/agentSessions';
 import { useSettingsStore } from '@/stores/settings';
 import { useTerminalWriteStore } from '@/stores/terminalWrite';
-import { useWorktreeActivityStore } from '@/stores/worktreeActivity';
 
 interface AgentTerminalProps {
   id?: string; // Terminal session ID (UI key)
@@ -105,6 +111,16 @@ export function AgentTerminal({
     execArgs: string[];
   } | null>(null);
 
+  const agentCapabilities = useMemo(() => resolveAgentCapabilities(agentId), [agentId]);
+  const enhancedInputShortcutAction = getEnhancedInputShortcutAction({
+    globalEnabled: claudeCodeIntegration.enhancedInputEnabled,
+    capabilities: agentCapabilities,
+  });
+  const enhancedInputShortcutEnabled = shouldHandleEnhancedInputShortcut({
+    globalEnabled: claudeCodeIntegration.enhancedInputEnabled,
+    capabilities: agentCapabilities,
+  });
+
   // Resolve shell configuration on mount and when shellConfig changes
   useEffect(() => {
     window.electronAPI.shell.resolveForCommand(shellConfig).then(setResolvedShell);
@@ -182,14 +198,19 @@ export function AgentTerminal({
       // Hide enhanced input when agent starts running (hideWhileRunning mode)
       if (
         newState === 'outputting' &&
-        agentId === 'claude' &&
-        claudeCodeIntegration.enhancedInputEnabled &&
+        enhancedInputShortcutEnabled &&
         claudeCodeIntegration.enhancedInputAutoPopup === 'hideWhileRunning'
       ) {
         onEnhancedInputOpenChange?.(false);
       }
     },
-    [terminalSessionId, setOutputState, agentId, claudeCodeIntegration, onEnhancedInputOpenChange]
+    [
+      terminalSessionId,
+      setOutputState,
+      enhancedInputShortcutEnabled,
+      claudeCodeIntegration.enhancedInputAutoPopup,
+      onEnhancedInputOpenChange,
+    ]
   );
 
   // Mark session as active when user is viewing it
@@ -198,10 +219,6 @@ export function AgentTerminal({
       markSessionActive(terminalSessionId);
     }
   }, [isActive, terminalSessionId, markSessionActive]);
-
-  // Activity state setter - used by startActivityPolling and handleData/handleCustomKey
-  const setActivityState = useWorktreeActivityStore((s) => s.setActivityState);
-  const getActivityState = useWorktreeActivityStore((s) => s.getActivityState);
 
   // Start polling for process activity
   const startActivityPolling = useCallback(() => {
@@ -577,7 +594,6 @@ export function AgentTerminal({
 
   // Handle Shift+Enter for newline (Ctrl+J / LF for all agents)
   // Also detect Enter key press to mark session as activated
-  // biome-ignore lint/correctness/useExhaustiveDependencies: terminal is accessed via try-catch for safety and defined after this callback
   const handleCustomKey = useCallback(
     (event: KeyboardEvent, ptyId: string, getCurrentLine?: () => string | null) => {
       // Handle Shift+Enter for newline - must be before keydown check to block both keydown and keypress
@@ -591,13 +607,20 @@ export function AgentTerminal({
       // Only handle keydown events for other logic
       if (event.type !== 'keydown') return true;
 
-      // Handle Ctrl+G to toggle enhanced input (only for Claude)
-      if (event.ctrlKey && event.code === 'KeyG' && agentId === 'claude') {
-        if (claudeCodeIntegration.enhancedInputEnabled) {
+      // Handle Ctrl+G to toggle enhanced input for agents that support it.
+      if (event.ctrlKey && event.code === 'KeyG') {
+        if (enhancedInputShortcutAction === 'toggle') {
           setEnhancedInputOpen(!enhancedInputOpen);
           return false; // Block the key event only when enhanced input is enabled
         }
-        // When enhanced input is disabled, let the event pass through to terminal
+        if (enhancedInputShortcutAction === 'notify_unsupported') {
+          toastManager.add({
+            type: 'warning',
+            title: t('Enhanced Input unavailable'),
+            description: t('Current agent does not support Enhanced Input'),
+          });
+          return false;
+        }
       }
 
       // Detect Enter key press (without modifiers) to activate session and start idle monitoring
@@ -620,26 +643,15 @@ export function AgentTerminal({
         }
         // Reset output counter.
         dataSinceEnterRef.current = 0;
+        const currentLine = getCurrentLine?.() ?? null;
 
         // Detect if user entered a slash command (like /clear, /help, etc.)
         // These commands don't trigger Claude and should quickly return to idle
-        let isSlashCommand = false;
-        if (terminal) {
-          try {
-            const cursorY = terminal.buffer.active.cursorY;
-            const line = terminal.buffer.active.getLine(cursorY);
-            if (line) {
-              const lineText = line.translateToString().trim();
-              isSlashCommand = lineText.startsWith('/');
-              lastCommandWasSlashCommand.current = isSlashCommand;
-              // Note: slash command detection enables 2s idle timeout for quick return to idle
-              if (isSlashCommand) {
-                console.log(`[AgentTerminal] Slash command: ${lineText.split(' ')[0]}`);
-              }
-            }
-          } catch {
-            // Ignore errors reading terminal buffer
-          }
+        const isSlashCommand = currentLine?.startsWith('/') ?? false;
+        lastCommandWasSlashCommand.current = isSlashCommand;
+        // Note: slash command detection enables 2s idle timeout for quick return to idle
+        if (isSlashCommand && currentLine) {
+          console.log(`[AgentTerminal] Slash command: ${currentLine.split(' ')[0]}`);
         }
 
         // Activity state is now managed by Hook notifications (PreToolUse, Stop, AskUserQuestion)
@@ -700,15 +712,10 @@ export function AgentTerminal({
       startActivityPolling,
       terminalSessionId,
       glowEffectEnabled,
-      cwd,
-      setActivityState,
-      agentId,
-      claudeCodeIntegration.enhancedInputEnabled,
+      enhancedInputShortcutAction,
       enhancedInputOpen,
       setEnhancedInputOpen,
-      getActivityState,
-      // Note: terminal is excluded as it's defined after this callback
-      // and accessed via try-catch for safety
+      t,
     ]
   );
 
@@ -923,12 +930,11 @@ export function AgentTerminal({
     async (content: string, imagePaths: string[]) => {
       if (!write || !terminalSessionId) return;
 
-      let message = content;
-
-      if (imagePaths.length > 0) {
-        const escapedPaths = imagePaths.map((p) => (p.includes(' ') ? `"${p}"` : p));
-        message += `\n\n${escapedPaths.join(' ')}`;
-      }
+      const message = formatEnhancedInputForAgent({
+        capabilities: agentCapabilities,
+        content,
+        imagePaths,
+      });
 
       // For multi-line content (images), write raw bracketed paste markers
       // to PTY directly. Avoids xterm's terminal.paste() which converts
@@ -945,7 +951,7 @@ export function AgentTerminal({
 
       terminal?.focus();
     },
-    [write, terminalSessionId, terminal]
+    [write, terminalSessionId, terminal, agentCapabilities]
   );
 
   useEffect(() => {

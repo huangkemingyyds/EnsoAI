@@ -33,6 +33,8 @@ interface EnhancedInputProps {
   isActive?: boolean;
   /** Working directory for file mention search */
   cwd?: string;
+  /** Whether Claude slash command completion is available for this Agent Session */
+  slashCommandCompletionEnabled?: boolean;
 }
 
 const MAX_IMAGES = 5;
@@ -51,6 +53,7 @@ export function EnhancedInput({
   keepOpenAfterSend = false,
   isActive = false,
   cwd,
+  slashCommandCompletionEnabled = false,
 }: EnhancedInputProps) {
   const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -76,6 +79,13 @@ export function EnhancedInput({
   const slashListRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!slashCommandCompletionEnabled) {
+      setSlashItems([]);
+      setSlashQuery(null);
+      setSlashResults([]);
+      return;
+    }
+
     let alive = true;
     const api = window.electronAPI?.claudeCompletions;
     if (!api) return;
@@ -100,7 +110,7 @@ export function EnhancedInput({
       alive = false;
       cleanup?.();
     };
-  }, []);
+  }, [slashCommandCompletionEnabled]);
 
   // Extract mention query from text before cursor
   const extractMentionQuery = useCallback((text: string, cursorPos: number): string | null => {
@@ -149,12 +159,15 @@ export function EnhancedInput({
         const nextMentionQuery = cwd ? extractMentionQuery(value, cursor) : null;
         setMentionQuery(nextMentionQuery);
         setMentionIndex(0);
-        const nextSlashQuery = nextMentionQuery === null ? extractSlashQuery(value, cursor) : null;
+        const nextSlashQuery =
+          slashCommandCompletionEnabled && nextMentionQuery === null
+            ? extractSlashQuery(value, cursor)
+            : null;
         setSlashQuery(nextSlashQuery);
         setSlashIndex(0);
       }, 0);
     },
-    [cwd, onContentChange, extractMentionQuery, extractSlashQuery]
+    [cwd, onContentChange, extractMentionQuery, extractSlashQuery, slashCommandCompletionEnabled]
   );
 
   // Debounced file search
@@ -173,7 +186,7 @@ export function EnhancedInput({
   }, [mentionQuery, cwd]);
 
   useEffect(() => {
-    if (slashQuery === null) {
+    if (!slashCommandCompletionEnabled || slashQuery === null) {
       setSlashResults([]);
       return;
     }
@@ -204,7 +217,7 @@ export function EnhancedInput({
       .slice(0, 10);
 
     setSlashResults(results);
-  }, [slashQuery, slashItems]);
+  }, [slashCommandCompletionEnabled, slashQuery, slashItems]);
 
   // Insert selected mention into textarea
   const insertMention = useCallback(
@@ -256,7 +269,12 @@ export function EnhancedInput({
 
       // Auto-learn: executing a slash item should be counted in the learned cache.
       const token = newContent.match(/^\/\S+/)?.[0];
-      if (token && !token.slice(1).includes('/') && !token.includes('\\')) {
+      if (
+        slashCommandCompletionEnabled &&
+        token &&
+        !token.slice(1).includes('/') &&
+        !token.includes('\\')
+      ) {
         window.electronAPI?.claudeCompletions?.learn(token).catch(() => {
           // Ignore learning failures; they should not block sending.
         });
@@ -267,7 +285,15 @@ export function EnhancedInput({
         onOpenChange(false);
       }
     },
-    [content, imagePaths, keepOpenAfterSend, onOpenChange, onSend, findSlashTokenStart]
+    [
+      content,
+      imagePaths,
+      keepOpenAfterSend,
+      onOpenChange,
+      onSend,
+      findSlashTokenStart,
+      slashCommandCompletionEnabled,
+    ]
   );
 
   // Scroll highlighted mention into view
@@ -312,13 +338,16 @@ export function EnhancedInput({
   );
 
   // Auto-resize textarea, respecting manual min height from drag
-  // biome-ignore lint/correctness/useExhaustiveDependencies: content triggers height recalculation
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta) return;
+    const minH = manualMinH ?? DEFAULT_MIN_H;
+    if (content === '') {
+      ta.style.height = `${minH}px`;
+      return;
+    }
     ta.style.height = 'auto';
     const scrollH = ta.scrollHeight;
-    const minH = manualMinH ?? DEFAULT_MIN_H;
     ta.style.height = `${Math.max(scrollH, minH)}px`;
   }, [content, manualMinH]);
 
@@ -331,12 +360,11 @@ export function EnhancedInput({
   }, [sessionId, open, isActive]);
 
   // Focus textarea when opened, session changes, or panel becomes active
-  // biome-ignore lint/correctness/useExhaustiveDependencies: sessionId triggers focus on session switch
   useEffect(() => {
     if (open && isActive && textareaRef.current) {
       textareaRef.current.focus();
     }
-  }, [open, sessionId, isActive]);
+  }, [open, isActive]);
 
   // Focus trap: only refocus textarea when focus leaves this panel.
   // This avoids breaking keyboard navigation to Upload/Close/Send buttons.
@@ -376,7 +404,7 @@ export function EnhancedInput({
     if (!trimmed && imagePaths.length === 0) return;
     try {
       // Auto-learn: if the message starts with `/xxx`, record it for future completion suggestions.
-      if (trimmed.startsWith('/')) {
+      if (slashCommandCompletionEnabled && trimmed.startsWith('/')) {
         const token = trimmed.match(/^\/\S+/)?.[0];
         // Avoid learning path-like tokens such as `/usr/local/bin`.
         if (token && !token.slice(1).includes('/') && !token.includes('\\')) {
@@ -399,7 +427,15 @@ export function EnhancedInput({
         description: message,
       });
     }
-  }, [content, imagePaths, onSend, keepOpenAfterSend, onOpenChange, t]);
+  }, [
+    content,
+    imagePaths,
+    onSend,
+    keepOpenAfterSend,
+    onOpenChange,
+    t,
+    slashCommandCompletionEnabled,
+  ]);
 
   const getImageExtension = useCallback((file: File): string => {
     const mime = file.type.toLowerCase();

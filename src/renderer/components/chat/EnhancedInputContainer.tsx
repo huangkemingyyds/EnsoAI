@@ -8,6 +8,8 @@ interface EnhancedInputContainerProps {
   onSend: (content: string, imagePaths: string[]) => void;
   /** Whether the parent panel is active (used to trigger focus on tab switch) */
   isActive?: boolean;
+  /** Whether slash command completion is available for this Agent Session */
+  slashCommandCompletionEnabled?: boolean;
 }
 
 /**
@@ -18,6 +20,7 @@ export const EnhancedInputContainer = memo(function EnhancedInputContainer({
   sessionId,
   onSend,
   isActive = false,
+  slashCommandCompletionEnabled = false,
 }: EnhancedInputContainerProps) {
   // Subscribe to only this session's enhanced input state
   const enhancedInputState = useAgentSessionsStore((state) => state.enhancedInputStates[sessionId]);
@@ -63,6 +66,7 @@ export const EnhancedInputContainer = memo(function EnhancedInputContainer({
       keepOpenAfterSend={keepOpenAfterSend}
       isActive={isActive}
       cwd={cwd}
+      slashCommandCompletionEnabled={slashCommandCompletionEnabled}
     />
   );
 });
