@@ -842,18 +842,20 @@ export const zhTranslations: Record<string, string> = {
   Manual: '手动打开',
   'Only open via Ctrl+G shortcut, Esc to close': '仅通过 Ctrl+G 手动打开，Esc 关闭',
   'Panel stays visible, remains open after sending': '面板始终显示，发送后不关闭',
-  'Auto-hide when agent is running, show when idle (requires Stop Hook)':
-    'Agent 运行时自动隐藏，空闲时显示（依赖 Stop Hook）',
-  'Requires Enhanced Notification': '需开启增强通知',
-  'Feature Dependency': '功能依赖提示',
-  '"Hide While Running" mode requires "Enhanced Notification". Display mode will be switched to "Always Show".':
-    '「运行时隐藏」模式需要「增强通知」支持。显示模式将切换为「始终显示」。',
+  "Auto-hide while running; completion auto-popup uses each Agent's declared completion signal":
+    '运行时自动隐藏；完成后自动弹出由各 Agent 声明的完成信号决定',
   Confirm: '确定',
   'Image too large': '图片过大',
   'Max image size is {{size}}MB': '单张图片最大 {{size}}MB',
   'Too many images': '图片数量过多',
   'Max images is {{count}}': '最多只能选择 {{count}} 张图片',
   'Failed to save image': '保存图片失败',
+  'Image input unavailable': '图片输入不可用',
+  'This agent only accepts image files when starting a new session.':
+    '当前 Agent 只支持在新建会话时通过启动参数接收图片。',
+  'Current agent does not support image input.': '当前 Agent 不支持图片输入。',
+  'Launch with {{agent}}': '使用 {{agent}} 启动',
+  '(selected)': '（已选择）',
   'Type your message... (Shift+Enter for newline)': '输入消息... (Shift+Enter 换行)',
   'Drag and drop images or paste from clipboard': '拖放图片或从剪贴板粘贴',
   Send: '发送',
@@ -1437,6 +1439,13 @@ export const zhTranslations: Record<string, string> = {
   'Control token usage vs quality balance': '控制 token 使用量与质量的平衡',
   'Effort Level': 'Effort 级别',
   'Higher effort = better quality, more tokens': '更高级别 = 更好质量，更多 token',
+  'Dev Mode': '开发模式',
+  'Apply Dev Presets': '应用开发模式预设',
+  'Apply presets for Claude, Codex, and Gemini with CLI flags to skip permissions and approvals.':
+    '为 Claude、Codex 和 Gemini 应用命令行参数，以跳过权限请求和审批。',
+  'This will overwrite your existing custom arguments for these agents.':
+    '这将覆盖这些 Agent 现有的自定义参数。',
+  'Apply Presets': '应用预设',
 };
 
 export function normalizeLocale(input?: string): Locale {

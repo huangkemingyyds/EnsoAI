@@ -1,6 +1,6 @@
 import type { BuiltinAgentId, CustomAgent } from '@shared/types';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { Pencil, Plus, RefreshCw, Search, Trash2, Zap } from 'lucide-react';
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogPopup, DialogTitle } from '@/components/ui/dialog';
@@ -194,6 +194,7 @@ export function AgentSettings() {
   const [editingAgent, setEditingAgent] = React.useState<CustomAgent | null>(null);
   const [editingBuiltinAgent, setEditingBuiltinAgent] = React.useState<string | null>(null);
   const [isAddingAgent, setIsAddingAgent] = React.useState(false);
+  const [isDevPresetsDialogOpen, setIsDevPresetsDialogOpen] = React.useState(false);
 
   // Detect a single agent (auto-disable if not installed)
   const detectSingleAgent = React.useCallback(
@@ -222,6 +223,28 @@ export function AgentSettings() {
     },
     [agentSettings, setAgentDetectionStatus, setAgentEnabled]
   );
+
+  const handleApplyDevPresets = () => {
+    const presets: Record<string, string> = {
+      claude: '--dangerously-skip-permissions',
+      codex: '--dangerously-bypass-approvals-and-sandbox',
+      gemini: '--approval-mode=yolo --skip-trust',
+    };
+
+    Object.entries(presets).forEach(([agentId, args]) => {
+      // 1. Set the custom args
+      setAgentCustomConfig(agentId, {
+        customPath: agentSettings[agentId]?.customPath,
+        customArgs: args,
+      });
+      // 2. Enable the agent
+      setAgentEnabled(agentId, true);
+      // 3. Trigger detection
+      void detectSingleAgent(agentId);
+    });
+
+    setIsDevPresetsDialogOpen(false);
+  };
 
   // Refresh only enabled agents (auto-disable if not installed)
   const refreshEnabledAgents = React.useCallback(async () => {
@@ -375,18 +398,28 @@ export function AgentSettings() {
             {t('Configure available AI Agent CLI tools')}
           </p>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          onClick={() => refreshEnabledAgents()}
-          disabled={isRefreshing}
-          title={t('Refresh enabled agents')}
-        >
-          <RefreshCw className={cn('h-4 w-4', isRefreshing && 'animate-spin')} />
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1 text-xs text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-500 dark:hover:text-amber-400 dark:hover:bg-amber-950/30"
+            onClick={() => setIsDevPresetsDialogOpen(true)}
+          >
+            <Zap className="h-3.5 w-3.5" />
+            {t('Dev Mode')}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => refreshEnabledAgents()}
+            disabled={isRefreshing}
+            title={t('Refresh enabled agents')}
+          >
+            <RefreshCw className={cn('h-4 w-4', isRefreshing && 'animate-spin')} />
+          </Button>
+        </div>
       </div>
-
       <p className="text-xs text-muted-foreground">
         {t(
           'New sessions use the default agent. Long-press the plus to pick another enabled agent. Only Claude supports session persistence for now.'
@@ -894,6 +927,56 @@ export function AgentSettings() {
                 onCancel={() => setEditingBuiltinAgent(null)}
               />
             )}
+          </div>
+        </DialogPopup>
+      </Dialog>
+
+      {/* Dev Mode Presets Dialog */}
+      <Dialog open={isDevPresetsDialogOpen} onOpenChange={setIsDevPresetsDialogOpen}>
+        <DialogPopup className="sm:max-w-md" showCloseButton={false}>
+          <div className="p-4">
+            <div className="flex items-center gap-2 text-amber-600 dark:text-amber-500 mb-2">
+              <Zap className="h-5 w-5" />
+              <DialogTitle className="text-base font-medium">{t('Apply Dev Presets')}</DialogTitle>
+            </div>
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                {t(
+                  'Apply presets for Claude, Codex, and Gemini with CLI flags to skip permissions and approvals.'
+                )}
+              </p>
+              <p className="text-xs font-medium text-destructive/80">
+                {t('This will overwrite your existing custom arguments for these agents.')}
+              </p>
+
+              <div className="rounded-md bg-muted p-2 space-y-1 text-[10px] font-mono leading-relaxed">
+                <div className="flex gap-2">
+                  <span className="text-muted-foreground w-12 shrink-0">Claude:</span>
+                  <span>--dangerously-skip-permissions</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="text-muted-foreground w-12 shrink-0">Codex:</span>
+                  <span>--dangerously-bypass-approvals-and-sandbox</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="text-muted-foreground w-12 shrink-0">Gemini:</span>
+                  <span>--approval-mode=yolo --skip-trust</span>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsDevPresetsDialogOpen(false)}
+                >
+                  {t('Cancel')}
+                </Button>
+                <Button size="sm" onClick={handleApplyDevPresets}>
+                  {t('Apply Presets')}
+                </Button>
+              </div>
+            </div>
           </div>
         </DialogPopup>
       </Dialog>

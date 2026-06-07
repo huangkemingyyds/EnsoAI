@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CommandRegistry, routeInput } from '../commandRegistry';
+import { CommandRegistry, commandRegistry, routeInput } from '../commandRegistry';
 
 describe('CommandRegistry', () => {
   it('should register and retrieve a command', () => {
@@ -16,9 +16,56 @@ describe('CommandRegistry', () => {
     expect(command?.metadata.description).toBe('Test command');
   });
 
+  it('should handle aliases', () => {
+    const registry = new CommandRegistry();
+    const handler = vi.fn();
+    const metadata = { description: 'Test', aliases: ['t'] };
+
+    registry.register('test', handler, metadata);
+
+    expect(registry.getCommand('test')).toBeDefined();
+    expect(registry.getCommand('t')).toBeDefined();
+    expect(registry.getCommand('t')?.id).toBe('test');
+  });
+
   it('should return undefined for unregistered commands', () => {
     const registry = new CommandRegistry();
     expect(registry.getCommand('unknown')).toBeUndefined();
+  });
+});
+
+describe('Built-in help command', () => {
+  it('should list all commands when no args provided', async () => {
+    const helpCmd = commandRegistry.getCommand('help');
+    expect(helpCmd).toBeDefined();
+
+    const result = await helpCmd?.handler({
+      args: '',
+      sessionId: 'test',
+      writeVirtual: vi.fn(),
+    });
+
+    expect(typeof result).toBe('object');
+    if (typeof result === 'object') {
+      expect(result.title).toBe('EnsoAI');
+      expect(result.sections?.[0].lines.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('should show specific command help when args provided', async () => {
+    const helpCmd = commandRegistry.getCommand('help');
+
+    const result = await helpCmd?.handler({
+      args: 'reset',
+      sessionId: 'test',
+      writeVirtual: vi.fn(),
+    });
+
+    expect(typeof result).toBe('object');
+    if (typeof result === 'object') {
+      expect(result.title).toBe('Help: /reset');
+      expect(result.sections?.[0].title).toBe('Usage');
+    }
   });
 });
 

@@ -1,5 +1,6 @@
 import type { ResolvedAgentCapabilities } from './agentCapabilities';
 import { commandRegistry, routeInput } from './commandRegistry';
+import { type CommandResult, SystemMessageFormatter } from './SystemMessageFormatter';
 
 export interface ProcessedInput {
   type: 'LOCAL' | 'AGENT' | 'PROMPT';
@@ -36,6 +37,7 @@ export async function processOmniInput(
     if (decision.type === 'LOCAL') {
       const command = commandRegistry.getCommand(decision.command!);
       if (command) {
+        // Special case for reset in pipeline (if we want to allow it)
         if (decision.command === 'reset') {
           return {
             type: 'LOCAL',
@@ -45,11 +47,18 @@ export async function processOmniInput(
           };
         }
 
-        const output = await command.handler({
+        const rawOutput = await command.handler({
           args: decision.args || '',
           sessionId: options.sessionId,
           writeVirtual: options.writeVirtual,
         });
+
+        const output =
+          typeof rawOutput === 'string'
+            ? rawOutput
+            : rawOutput
+              ? SystemMessageFormatter.format(rawOutput)
+              : undefined;
 
         // Continue as AGENT prompt with injected context
         const injectedContent = output
@@ -76,16 +85,25 @@ export async function processOmniInput(
       type: 'LOCAL',
       content,
       imagePaths,
-      executeLocal: () => {
+      executeLocal: async () => {
+        const command = commandRegistry.getCommand(decision.command!);
+        if (!command) return;
+
+        const result = await command.handler({
+          args: decision.args || '',
+          sessionId: options.sessionId,
+          writeVirtual: options.writeVirtual,
+        });
+
+        // UI-bound actions
         if (decision.command === 'reset') {
           options.onResetSession?.();
-        } else {
-          const command = commandRegistry.getCommand(decision.command!);
-          return command?.handler({
-            args: decision.args || '',
-            sessionId: options.sessionId,
-            writeVirtual: options.writeVirtual,
-          });
+        }
+
+        if (result) {
+          const formatted =
+            typeof result === 'string' ? result : SystemMessageFormatter.format(result);
+          options.writeVirtual(formatted);
         }
       },
     };
@@ -95,11 +113,23 @@ export async function processOmniInput(
   let finalContent = content;
   const mcpMatches = Array.from(content.matchAll(/@mcp:([\w-]+)/g));
   if (mcpMatches.length > 0) {
-    for (const match of mcpMatches) {
-      const serverName = match[1];
-      // Placeholder for actual MCP data fetching
-      const mcpData = `[Sample data from MCP server ${serverName}]`;
-      finalContent = finalContent.replace(match[0], mcpData);
+    try {
+      const mcpConfigs = await window.electronAPI.claudeConfig.mcp.read();
+      for (const match of mcpMatches) {
+        const serverName = match[1];
+        const config = mcpConfigs[serverName];
+        if (config) {
+          const mcpData = `[Context from MCP server ${serverName}: ${JSON.stringify(config)}]`;
+          finalContent = finalContent.replace(match[0], mcpData);
+        } else {
+          options.writeVirtual(
+            `\r\n\x1b[33mWarning: MCP server "${serverName}" not found.\x1b[0m\r\n`
+          );
+        }
+      }
+    } catch (error) {
+      console.error('[commandProcessor] Failed to read MCP configs:', error);
+      options.writeVirtual('\r\n\x1b[31mError: Failed to read MCP configurations.\x1b[0m\r\n');
     }
   }
 
