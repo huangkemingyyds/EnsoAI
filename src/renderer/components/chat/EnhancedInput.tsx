@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Dialog, DialogPopup } from '@/components/ui/dialog';
 import { toastManager } from '@/components/ui/toast';
 import { useI18n } from '@/i18n';
+import { commandRegistry } from '@/lib/commandRegistry';
 import { isFocusLocked, lockFocus, unlockFocus } from '@/lib/focusLock';
 import { toLocalFileUrl } from '@/lib/localFileUrl';
 import { cn } from '@/lib/utils';
@@ -165,15 +166,12 @@ export function EnhancedInput({
         const nextMentionQuery = cwd ? extractMentionQuery(value, cursor) : null;
         setMentionQuery(nextMentionQuery);
         setMentionIndex(0);
-        const nextSlashQuery =
-          slashCommandCompletionEnabled && nextMentionQuery === null
-            ? extractSlashQuery(value, cursor)
-            : null;
+        const nextSlashQuery = nextMentionQuery === null ? extractSlashQuery(value, cursor) : null;
         setSlashQuery(nextSlashQuery);
         setSlashIndex(0);
       }, 0);
     },
-    [cwd, onContentChange, extractMentionQuery, extractSlashQuery, slashCommandCompletionEnabled]
+    [cwd, onContentChange, extractMentionQuery, extractSlashQuery]
   );
 
   // Debounced file search
@@ -192,18 +190,33 @@ export function EnhancedInput({
   }, [mentionQuery, cwd]);
 
   useEffect(() => {
-    if (!slashCommandCompletionEnabled || slashQuery === null) {
+    if (slashQuery === null) {
       setSlashResults([]);
       return;
     }
 
     const q = slashQuery.toLowerCase();
-    const results = slashItems
+
+    // Map local commands to completion items
+    const localItems: ClaudeSlashCompletionItem[] = commandRegistry.getAllCommands().map((cmd) => ({
+      label: `/${cmd.id}`,
+      kind: 'command',
+      description: cmd.metadata.description,
+      source: 'enso', // Mark as local
+    }));
+
+    const allItems = [...localItems, ...slashItems];
+
+    const results = allItems
       .filter(
         (item) => item.label.toLowerCase().includes(`/${q}`) || item.label.toLowerCase().includes(q)
       )
       .sort((a, b) => {
-        // Sort by kind first: commands before skills
+        // Sort by source first: enso commands first
+        if (a.source === 'enso' && b.source !== 'enso') return -1;
+        if (a.source !== 'enso' && b.source === 'enso') return 1;
+
+        // Sort by kind next: commands before skills
         const kindRank = (x: ClaudeSlashCompletionItem) => (x.kind === 'command' ? 0 : 1);
         const diffKind = kindRank(a) - kindRank(b);
         if (diffKind !== 0) return diffKind;
@@ -223,7 +236,7 @@ export function EnhancedInput({
       .slice(0, 10);
 
     setSlashResults(results);
-  }, [slashCommandCompletionEnabled, slashQuery, slashItems]);
+  }, [slashQuery, slashItems]);
 
   // Insert selected mention into textarea
   const insertMention = useCallback(
@@ -841,7 +854,14 @@ export function EnhancedInput({
                 )}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-mono">{item.label}</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-mono truncate">{item.label}</span>
+                    {item.source === 'enso' && (
+                      <span className="text-[10px] px-1 rounded bg-primary/20 text-primary shrink-0">
+                        EnsoAI
+                      </span>
+                    )}
+                  </div>
                   <span className="text-muted-foreground text-xs shrink-0">
                     {item.kind === 'command' ? '命令' : '技能'}
                   </span>

@@ -60,6 +60,8 @@ export interface UseXtermResult {
   settings: ReturnType<typeof useTerminalSettings>;
   /** Write data to pty */
   write: (data: string) => void;
+  /** Write data to terminal UI only (not pty) */
+  writeVirtual: (data: string) => void;
   /** Manually trigger fit */
   fit: () => void;
   /** Get current terminal instance */
@@ -190,6 +192,12 @@ export function useXterm({
   const write = useCallback((data: string) => {
     if (ptyIdRef.current) {
       window.electronAPI.terminal.write(ptyIdRef.current, data);
+    }
+  }, []);
+
+  const writeVirtual = useCallback((data: string) => {
+    if (terminalRef.current) {
+      terminalRef.current.write(data);
     }
   }, []);
 
@@ -820,6 +828,7 @@ export function useXterm({
   useEffect(() => {
     if (isActive && terminalRef.current && !isLoading) {
       requestAnimationFrame(() => {
+        // biome-ignore lint/suspicious/noFocusedTests: false positive, fit is xterm method
         fit();
         terminalRef.current?.focus();
       });
@@ -904,6 +913,7 @@ export function useXterm({
     isLoading,
     settings,
     write,
+    writeVirtual,
     fit,
     terminal: terminalRef.current,
     findNext,

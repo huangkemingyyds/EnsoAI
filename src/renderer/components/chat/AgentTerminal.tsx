@@ -15,6 +15,8 @@ import {
   resolveAgentCapabilities,
   shouldHandleEnhancedInputShortcut,
 } from '@/lib/agentCapabilities';
+import { planAgentLaunchPayload, shouldPlanAgentLaunchPayload } from '@/lib/agentLaunchPayload';
+import { processOmniInput } from '@/lib/commandProcessor';
 import { formatEnhancedInputForAgent } from '@/lib/enhancedInputFormatter';
 import { type OutputState, useAgentSessionsStore } from '@/stores/agentSessions';
 import { useSettingsStore } from '@/stores/settings';
@@ -34,6 +36,7 @@ interface AgentTerminalProps {
   isActive?: boolean;
   hasPendingCommand?: boolean; // Force terminal activation even when not visible
   initialPrompt?: string; // Initial prompt to pass as CLI argument (auto-execute)
+  initialImagePaths?: string[]; // Image paths to pass as CLI args with the initial prompt
   canMerge?: boolean; // whether merge option should be enabled (has multiple groups)
   /**
    * When provided, Enhanced Input open state is controlled by parent (e.g. AgentPanel store).
@@ -52,6 +55,7 @@ interface AgentTerminalProps {
   onFocus?: () => void; // called when terminal is clicked/focused to activate the group
   onResetSession?: () => void;
   onNewSession?: () => void;
+  onAgentCompletionSignal?: (sessionId: string) => void;
   onRegisterEnhancedInputSender?: (
     sessionId: string,
     sender: (content: string, imagePaths: string[]) => void
@@ -80,6 +84,7 @@ export function AgentTerminal({
   isActive = false,
   hasPendingCommand = false,
   initialPrompt,
+  initialImagePaths = [],
   canMerge = false,
   enhancedInputOpen: externalEnhancedInputOpen,
   onEnhancedInputOpenChange,
@@ -93,6 +98,7 @@ export function AgentTerminal({
   onFocus,
   onResetSession,
   onNewSession,
+  onAgentCompletionSignal,
   onRegisterEnhancedInputSender,
   onUnregisterEnhancedInputSender,
 }: AgentTerminalProps) {
@@ -172,6 +178,7 @@ export function AgentTerminal({
   const isActiveRef = useRef(isActive); // Track latest isActive value for interval callback
   const lastCommandWasSlashCommand = useRef(false); // Track if last command was a slash command
   const runStartTimeRef = useRef(0); // Track when the current command started running
+  const completionSignalSentRef = useRef(false);
 
   const setOutputState = useAgentSessionsStore((s) => s.setOutputState);
   const markSessionActive = useAgentSessionsStore((s) => s.markSessionActive);
@@ -208,6 +215,7 @@ export function AgentTerminal({
   const updateOutputState = useCallback(
     (newState: OutputState) => {
       if (!terminalSessionId) return;
+      const previousState = outputStateRef.current;
       if (outputStateRef.current === newState) return;
       outputStateRef.current = newState;
       // Use isActiveRef.current to get latest value (important for interval callbacks)
@@ -221,6 +229,19 @@ export function AgentTerminal({
       ) {
         onEnhancedInputOpenChange?.(false);
       }
+
+      const isStopHookSession =
+        claudeCodeIntegration.stopHookEnabled && agentCapabilities.completionDetection.useWebSocket;
+      if (
+        newState === 'idle' &&
+        previousState === 'outputting' &&
+        agentCapabilities.hasCompletionSignal &&
+        !isStopHookSession &&
+        !completionSignalSentRef.current
+      ) {
+        completionSignalSentRef.current = true;
+        onAgentCompletionSignal?.(terminalSessionId);
+      }
     },
     [
       terminalSessionId,
@@ -228,6 +249,9 @@ export function AgentTerminal({
       enhancedInputShortcutEnabled,
       agentInput.autoPopupMode,
       onEnhancedInputOpenChange,
+      claudeCodeIntegration.stopHookEnabled,
+      agentCapabilities,
+      onAgentCompletionSignal,
     ]
   );
 
@@ -334,6 +358,7 @@ export function AgentTerminal({
 
     // Use custom path if provided, otherwise use agentCommand
     const effectiveCommand = customPath || agentCommand;
+    const isWindows = window.electronAPI?.env?.platform === 'win32';
 
     const supportsSession = agentCommand?.startsWith('claude') || agentCommand === 'cursor-agent';
     // Only Claude CLI supports --ide; Cursor CLI does not (errors with "unknown option '--ide'")
@@ -359,34 +384,23 @@ export function AgentTerminal({
       agentArgs.push(customArgs);
     }
 
-    // Append initial prompt as CLI positional argument (for auto-execute)
-    // Most CLI agents (claude, codex, gemini, etc.) accept a prompt as trailing argument
-    if (initialPrompt) {
-      const isWindows = window.electronAPI?.env?.platform === 'win32';
-
-      if (isWindows) {
-        // Windows: use double quotes with PowerShell/cmd compatible escaping
-        // Escape: backslashes (double them), double quotes (backslash), backticks (PowerShell)
-        const escaped = initialPrompt
-          .replace(/\\/g, '\\\\')
-          .replace(/"/g, '\\"')
-          .replace(/`/g, '``')
-          .replace(/%/g, '%%') // cmd variable expansion
-          .replace(/\$/g, '`$') // PowerShell variable expansion
-          .replace(/\n/g, ' '); // Replace newlines with spaces for Windows
-        agentArgs.push(`"${escaped}"`);
-      } else {
-        // Unix: use $'...' ANSI-C quoting syntax (bash/zsh compatible)
-        // This handles: backslashes, single quotes, and newlines
-        const escaped = initialPrompt
-          .replace(/\\/g, '\\\\')
-          .replace(/'/g, "\\'")
-          .replace(/\n/g, '\\n');
-        agentArgs.push(`$'${escaped}'`);
+    // Append initial launch payload for auto-execute / first prompt sessions.
+    // Most CLI agents (claude, codex, gemini, etc.) accept a prompt as trailing argument.
+    if (shouldPlanAgentLaunchPayload({ prompt: initialPrompt, imagePaths: initialImagePaths })) {
+      const launchPayload = planAgentLaunchPayload({
+        capabilities: agentCapabilities,
+        prompt: initialPrompt,
+        imagePaths: initialImagePaths,
+        platform: isWindows ? 'win32' : 'posix',
+      });
+      if (launchPayload.ok) {
+        agentArgs.push(...launchPayload.imageArgs);
+        if (launchPayload.promptArg) {
+          agentArgs.push(launchPayload.promptArg);
+        }
       }
     }
 
-    const isWindows = window.electronAPI?.env?.platform === 'win32';
     let envVars: Record<string, string> | undefined;
 
     // Hapi environment: run through hapi (global) or npx @twsxtd/hapi with CLI_API_TOKEN
@@ -494,6 +508,8 @@ export function AgentTerminal({
     customPath,
     customArgs,
     initialPrompt,
+    initialImagePaths,
+    agentCapabilities,
     resumeSessionId,
     initialized,
     environment,
@@ -715,6 +731,7 @@ export function AgentTerminal({
         // Reset output counter.
         dataSinceEnterRef.current = 0;
         runStartTimeRef.current = Date.now();
+        completionSignalSentRef.current = false;
         const currentLine = getCurrentLine?.() ?? null;
 
         // Detect if user entered a slash command (like /clear, /help, etc.)
@@ -815,6 +832,7 @@ export function AgentTerminal({
     clear,
     refreshRenderer,
     write,
+    writeVirtual,
   } = useXterm({
     cwd,
     command,
@@ -1012,11 +1030,37 @@ export function AgentTerminal({
         return;
       }
 
-      const message = formatEnhancedInputForAgent({
-        capabilities: agentCapabilities,
-        content,
-        imagePaths,
+      // Process input (Pipeline, @mcp, Local Commands)
+      const processed = await processOmniInput(content, imagePaths, {
+        sessionId: terminalSessionId,
+        agentCapabilities,
+        writeVirtual,
+        onResetSession,
       });
+
+      if (processed.type === 'LOCAL') {
+        await processed.executeLocal?.();
+        return;
+      }
+
+      const formatted = formatEnhancedInputForAgent({
+        capabilities: agentCapabilities,
+        content: processed.content,
+        imagePaths: processed.imagePaths,
+      });
+      if (!formatted.ok) {
+        toastManager.add({
+          type: 'warning',
+          title: t('Image input unavailable'),
+          description:
+            formatted.reason === 'cli_arg_requires_new_session'
+              ? t('This agent only accepts image files when starting a new session.')
+              : t('Current agent does not support image input.'),
+        });
+        return;
+      }
+
+      const message = formatted.message;
 
       // For multi-line content (images), write raw bracketed paste markers
       // to PTY directly. Avoids xterm's terminal.paste() which converts
@@ -1033,7 +1077,16 @@ export function AgentTerminal({
 
       terminal?.focus();
     },
-    [write, terminalSessionId, terminal, agentCapabilities, outputStateFromStore, t]
+    [
+      write,
+      terminalSessionId,
+      terminal,
+      agentCapabilities,
+      outputStateFromStore,
+      t,
+      writeVirtual,
+      onResetSession,
+    ]
   );
 
   useEffect(() => {
