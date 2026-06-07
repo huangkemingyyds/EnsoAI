@@ -63,10 +63,17 @@ export function PluginsSection() {
 
   return (
     <div className="border-t pt-4 mt-4">
-      <button
-        type="button"
-        className="flex w-full items-center justify-between"
+      <div
+        className="flex w-full items-center justify-between cursor-pointer"
         onClick={() => setExpanded(!expanded)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setExpanded(!expanded);
+          }
+        }}
       >
         <div className="flex items-center gap-2">
           {expanded ? (
@@ -102,7 +109,7 @@ export function PluginsSection() {
             <Settings2 className="h-3.5 w-3.5" />
           </Button>
         </div>
-      </button>
+      </div>
 
       <MarketplacesDialog open={marketplacesOpen} onOpenChange={setMarketplacesOpen} />
       <PluginBrowserDialog

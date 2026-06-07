@@ -111,10 +111,17 @@ export function PromptsSection() {
 
   return (
     <div className="border-t pt-4 mt-4">
-      <button
-        type="button"
-        className="flex w-full items-center justify-between"
+      <div
+        className="flex w-full items-center justify-between cursor-pointer"
         onClick={() => setExpanded(!expanded)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setExpanded(!expanded);
+          }
+        }}
       >
         <div className="flex items-center gap-2">
           {expanded ? (
@@ -138,7 +145,7 @@ export function PromptsSection() {
         >
           <Plus className="h-3.5 w-3.5" />
         </Button>
-      </button>
+      </div>
 
       {expanded && (
         <div className="mt-3 space-y-2">

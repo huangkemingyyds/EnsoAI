@@ -423,8 +423,17 @@ export class GitService {
     }
   }
 
-  async fetch(remote = 'origin'): Promise<void> {
-    await this.git.fetch(remote);
+  async fetch(remote?: string): Promise<void> {
+    const remotes = await this.git.getRemotes();
+    if (remotes.length === 0) return;
+
+    if (remote) {
+      if (remotes.some((r) => r.name === remote)) {
+        await this.git.fetch(remote);
+      }
+    } else {
+      await this.git.fetch();
+    }
   }
 
   async checkout(branch: string): Promise<void> {
@@ -1177,7 +1186,10 @@ export class GitService {
    */
   async fetchSubmodule(submodulePath: string): Promise<void> {
     const subGit = this.getSubmoduleGit(submodulePath);
-    await subGit.fetch();
+    const remotes = await subGit.getRemotes();
+    if (remotes.length > 0) {
+      await subGit.fetch();
+    }
   }
 
   /**
