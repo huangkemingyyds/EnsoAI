@@ -12,6 +12,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty';
+import { toastManager } from '@/components/ui/toast';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '@/components/ui/tooltip';
 import { useI18n } from '@/i18n';
 import {
@@ -20,6 +21,13 @@ import {
   shouldRenderEnhancedInput,
   shouldUseSlashCommandCompletion,
 } from '@/lib/agentCapabilities';
+import {
+  createAgentLaunchSession,
+  createInitializedSessionUpdates,
+  hasPendingLaunchPayload,
+} from '@/lib/agentLaunchSession';
+import { resolveAgentLaunchTarget } from '@/lib/agentLaunchTarget';
+import { formatEnhancedInputForAgent } from '@/lib/enhancedInputFormatter';
 import { pauseFocusLock, restoreFocusIfLocked } from '@/lib/focusLock';
 import { defaultDarkTheme, getXtermTheme } from '@/lib/ghosttyTheme';
 import { matchesKeybinding } from '@/lib/keybinding';
@@ -33,6 +41,7 @@ import { useTerminalStore } from '@/stores/terminal';
 import { useWorktreeActivityStore } from '@/stores/worktreeActivity';
 import { AgentGroup } from './AgentGroup';
 import { AgentTerminal } from './AgentTerminal';
+import { EnhancedInput } from './EnhancedInput';
 import { EnhancedInputContainer } from './EnhancedInputContainer';
 import { QuickTerminalModal } from './QuickTerminalModal';
 import type { Session } from './SessionBar';
@@ -474,6 +483,25 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
   // Empty state agent menu
   const [showAgentMenu, setShowAgentMenu] = useState(false);
   const [installedAgents, setInstalledAgents] = useState<Set<string>>(new Set());
+  const [firstPromptAgentId, setFirstPromptAgentId] = useState(defaultAgentId);
+  const [firstPromptContent, setFirstPromptContent] = useState('');
+  const [firstPromptImages, setFirstPromptImages] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!agentSettings[firstPromptAgentId]?.enabled) {
+      setFirstPromptAgentId(defaultAgentId);
+    }
+  }, [agentSettings, defaultAgentId, firstPromptAgentId]);
+
+  const firstPromptLaunchTarget = useMemo(
+    () =>
+      resolveAgentLaunchTarget({
+        agentId: firstPromptAgentId,
+        customAgents,
+        agentSettings,
+      }),
+    [firstPromptAgentId, customAgents, agentSettings]
+  );
 
   // Build installed agents set from persisted detection status
   useEffect(() => {
@@ -823,6 +851,47 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
   // 监听 Claude stop hook 通知，精确更新 output state 并发送完成通知
   const setOutputState = useAgentSessionsStore((s) => s.setOutputState);
   const getActivityState = useWorktreeActivityStore((s) => s.getActivityState);
+  const shouldOpenEnhancedInputAfterCompletion = useCallback(
+    (session: Session, hasCompletionSignal: boolean) => {
+      const activityState = getActivityState(session.cwd);
+      const capabilities = resolveAgentCapabilities(session.agentId, {
+        customAgents,
+        agentSettings,
+      });
+
+      return (
+        shouldAutoOpenEnhancedInput({
+          globalEnabled: agentInput.enabled,
+          capabilities,
+          autoPopupMode: agentInput.autoPopupMode,
+          hasCompletionSignal,
+        }) && activityState !== 'waiting_input'
+      );
+    },
+    [agentInput.enabled, agentInput.autoPopupMode, customAgents, agentSettings, getActivityState]
+  );
+
+  const handleAgentCompletionSignal = useCallback(
+    (sessionId: string) => {
+      const session = allSessions.find((s) => s.id === sessionId || s.sessionId === sessionId);
+      if (!session) return;
+      const capabilities = resolveAgentCapabilities(session.agentId, {
+        customAgents,
+        agentSettings,
+      });
+
+      if (shouldOpenEnhancedInputAfterCompletion(session, capabilities.hasCompletionSignal)) {
+        setEnhancedInputOpen(session.id, true);
+      }
+    },
+    [
+      allSessions,
+      customAgents,
+      agentSettings,
+      shouldOpenEnhancedInputAfterCompletion,
+      setEnhancedInputOpen,
+    ]
+  );
   useEffect(() => {
     const unsubscribe = window.electronAPI.notification.onAgentStop(({ sessionId }) => {
       const session = findSessionByNotificationId(sessionId);
@@ -841,27 +910,18 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
         // 2. enhancedInputAutoPopup is 'always' or 'hideWhileRunning'
         // 3. Agent Completion Signal (Claude Stop Hook in this listener)
         // 4. NOT in 'waiting_input' state (AskUserQuestion or Permission Prompt active)
-        const autoPopupMode = agentInput.autoPopupMode;
-        const activityState = getActivityState(session.cwd);
         const capabilities = resolveAgentCapabilities(session.agentId, {
           customAgents,
           agentSettings,
         });
-        const hasCompletionSignal = capabilities.hasCompletionSignal;
         const shouldAutoPopup =
-          shouldAutoOpenEnhancedInput({
-            globalEnabled: agentInput.enabled,
-            capabilities,
-            autoPopupMode,
-            hasCompletionSignal,
-          }) &&
           claudeCodeIntegration.stopHookEnabled &&
-          activityState !== 'waiting_input';
+          shouldOpenEnhancedInputAfterCompletion(session, capabilities.hasCompletionSignal);
 
         // Auto popup enhanced input if enabled
         // Now we set the open state in store - it persists per session
         if (shouldAutoPopup) {
-          setEnhancedInputOpen(sessionId, true);
+          setEnhancedInputOpen(session.id, true);
         }
 
         // Send system notification
@@ -885,12 +945,11 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
     cwd,
     isActive,
     setOutputState,
-    getActivityState,
     claudeCodeIntegration,
     setEnhancedInputOpen,
     customAgents,
     agentSettings,
-    agentInput,
+    shouldOpenEnhancedInputAfterCompletion,
   ]);
 
   // Note: EnhancedInput open state is now stored per-session in the store
@@ -970,8 +1029,8 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
       const session = useAgentSessionsStore.getState().sessions.find((s) => s.id === id);
       if (!session) return;
 
-      // Update initialized state and clear pendingCommand (prompt is passed via CLI arg)
-      updateSession(id, { initialized: true, pendingCommand: undefined });
+      // Update initialized state and clear pending launch payload (passed via CLI args)
+      updateSession(id, createInitializedSessionUpdates());
     },
     [updateSession]
   );
@@ -1026,6 +1085,40 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
     [groups, updateCurrentGroupState, updateSession]
   );
 
+  const addSessionToGroup = useCallback(
+    (sessionId: string, targetGroupId?: string) => {
+      updateCurrentGroupState((state) => {
+        const groupId = targetGroupId || state.activeGroupId || state.groups[0]?.id;
+        if (!groupId) {
+          const newGroup: AgentGroupType = {
+            id: crypto.randomUUID(),
+            sessionIds: [sessionId],
+            activeSessionId: sessionId,
+          };
+          return {
+            groups: [newGroup],
+            activeGroupId: newGroup.id,
+            flexPercents: [100],
+          };
+        }
+
+        return {
+          ...state,
+          groups: state.groups.map((g) =>
+            g.id === groupId
+              ? {
+                  ...g,
+                  sessionIds: [...g.sessionIds, sessionId],
+                  activeSessionId: sessionId,
+                }
+              : g
+          ),
+        };
+      });
+    },
+    [updateCurrentGroupState]
+  );
+
   const handleNewSessionWithAgent = useCallback(
     (agentId: string, _agentCommand: string, targetGroupId?: string) => {
       // Handle Hapi and Happy agent IDs
@@ -1066,35 +1159,7 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
         setEnhancedInputOpen(newSession.id, true);
       }
 
-      // Add to target group or active group
-      updateCurrentGroupState((state) => {
-        const groupId = targetGroupId || state.activeGroupId || state.groups[0]?.id;
-        if (!groupId) {
-          const newGroup: AgentGroupType = {
-            id: crypto.randomUUID(),
-            sessionIds: [newSession.id],
-            activeSessionId: newSession.id,
-          };
-          return {
-            groups: [newGroup],
-            activeGroupId: newGroup.id,
-            flexPercents: [100],
-          };
-        }
-
-        return {
-          ...state,
-          groups: state.groups.map((g) =>
-            g.id === groupId
-              ? {
-                  ...g,
-                  sessionIds: [...g.sessionIds, newSession.id],
-                  activeSessionId: newSession.id,
-                }
-              : g
-          ),
-        };
-      });
+      addSessionToGroup(newSession.id, targetGroupId);
     },
     [
       customAgents,
@@ -1103,10 +1168,77 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
       cwd,
       addSession,
       setActiveId,
-      updateCurrentGroupState,
+      addSessionToGroup,
       agentInput.enabled,
       agentInput.autoPopupMode,
       setEnhancedInputOpen,
+    ]
+  );
+
+  const handleFirstPromptLaunch = useCallback(
+    (content: string, imagePaths: string[]) => {
+      const trimmedContent = content.trim();
+      if (!trimmedContent && imagePaths.length === 0) return;
+
+      const agentId = firstPromptAgentId;
+      const target = resolveAgentLaunchTarget({ agentId, customAgents, agentSettings });
+      const capabilities = resolveAgentCapabilities(agentId, { customAgents, agentSettings });
+
+      let pendingCommand = trimmedContent;
+      let pendingImagePaths: string[] = [];
+
+      if (imagePaths.length > 0) {
+        if (capabilities.enhancedInput.imageInput.mode === 'cli_arg') {
+          pendingImagePaths = imagePaths;
+        } else {
+          const formatted = formatEnhancedInputForAgent({
+            capabilities,
+            content: trimmedContent,
+            imagePaths,
+          });
+          if (!formatted.ok) {
+            toastManager.add({
+              type: 'warning',
+              title: t('Image input unavailable'),
+              description: t('Current agent does not support image input.'),
+            });
+            return;
+          }
+          pendingCommand = formatted.message;
+        }
+      }
+
+      const launchSession = createAgentLaunchSession({
+        id: crypto.randomUUID(),
+        repoPath,
+        cwd,
+        agentId: target.agentId,
+        agentCommand: target.command,
+        name: target.name,
+        prompt: pendingCommand,
+        imagePaths: pendingImagePaths,
+        customPath: target.customPath,
+        customArgs: target.customArgs,
+        environment: target.environment,
+      });
+
+      addSession(launchSession);
+      setActiveId(repoPath, cwd, launchSession.id);
+      addSessionToGroup(launchSession.id);
+      setFirstPromptContent('');
+      setFirstPromptImages([]);
+      setShowAgentMenu(false);
+    },
+    [
+      firstPromptAgentId,
+      repoPath,
+      cwd,
+      customAgents,
+      agentSettings,
+      addSession,
+      setActiveId,
+      addSessionToGroup,
+      t,
     ]
   );
 
@@ -1559,6 +1691,30 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
               <EmptyTitle>{t('No agent sessions')}</EmptyTitle>
               <EmptyDescription>{t('Create a session to start using AI Agent')}</EmptyDescription>
             </EmptyHeader>
+            {agentInput.enabled && (
+              <div className="w-[min(720px,calc(100vw-96px))] text-left">
+                <div className="mb-2 px-3 text-xs text-muted-foreground">
+                  {t('Launch with {{agent}}', { agent: firstPromptLaunchTarget.name })}
+                </div>
+                <EnhancedInput
+                  open
+                  onOpenChange={() => {
+                    setFirstPromptContent('');
+                    setFirstPromptImages([]);
+                  }}
+                  onSend={handleFirstPromptLaunch}
+                  content={firstPromptContent}
+                  imagePaths={firstPromptImages}
+                  onContentChange={setFirstPromptContent}
+                  onImagesChange={setFirstPromptImages}
+                  keepOpenAfterSend
+                  isActive={isActive}
+                  cwd={cwd}
+                  slashCommandCompletionEnabled={false}
+                  isAgentRunning={false}
+                />
+              </div>
+            )}
             <div
               className="relative"
               onMouseEnter={() => setShowAgentMenu(true)}
@@ -1624,15 +1780,24 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
                             type="button"
                             key={agentId}
                             onClick={() => {
-                              handleNewSessionWithAgent(
-                                agentId,
-                                customAgent?.command ?? AGENT_INFO[baseId]?.command ?? agentId
-                              );
+                              if (agentInput.enabled) {
+                                setFirstPromptAgentId(agentId);
+                              } else {
+                                handleNewSessionWithAgent(
+                                  agentId,
+                                  customAgent?.command ?? AGENT_INFO[baseId]?.command ?? agentId
+                                );
+                              }
                               setShowAgentMenu(false);
                             }}
                             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground transition-colors hover:bg-accent hover:text-accent-foreground whitespace-nowrap"
                           >
                             <span>{name}</span>
+                            {agentInput.enabled && agentId === firstPromptAgentId && (
+                              <span className="shrink-0 text-xs text-muted-foreground">
+                                {t('(selected)')}
+                              </span>
+                            )}
                             {isDefault && (
                               <span className="shrink-0 text-xs text-muted-foreground">
                                 {t('(default)')}
@@ -1740,8 +1905,9 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
                 initialized={session.initialized}
                 activated={session.activated}
                 isActive={isTerminalActive}
-                hasPendingCommand={!!session.pendingCommand}
+                hasPendingCommand={hasPendingLaunchPayload(session)}
                 initialPrompt={session.pendingCommand}
+                initialImagePaths={session.pendingImagePaths}
                 onInitialized={() => handleInitialized(sessionId)}
                 onActivated={() => handleActivated(sessionId)}
                 onActivatedWithFirstLine={(line) => handleActivatedWithFirstLine(sessionId, line)}
@@ -1763,6 +1929,7 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
                 onFocus={() => groupId && handleSelectSession(sessionId, groupId)}
                 onResetSession={() => handleResetSession(sessionId, groupId || undefined)}
                 onNewSession={() => handleNewSession(groupId || undefined)}
+                onAgentCompletionSignal={handleAgentCompletionSignal}
                 enhancedInputOpen={getEnhancedInputState(sessionId).open}
                 onEnhancedInputOpenChange={(open) => {
                   // EnhancedInput open state is now stored per-session in the store

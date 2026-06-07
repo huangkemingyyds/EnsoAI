@@ -1,0 +1,33 @@
+﻿# Handoff: Generalize Enhanced Input across Agent Sessions
+
+## Task Status: Core Implementation Complete
+The Enhanced Input panel (bottom input bar) has been decoupled from Claude-specific integration and is now a global feature available to all agents (Claude, Codex, Gemini, etc.).
+
+## Confirmed Decisions
+1. **Settings Migration**: Legacy settings under claudeCodeIntegration (enhancedInputEnabled, enhancedInputAutoPopup) are automatically migrated to a top-level gentInput object.
+2. **UI Decoupling**: In the Settings page, "Enhanced Input" configuration now has its own section ("Agent Input") instead of being nested under Claude.
+3. **Agent Capabilities**: 
+   - **Claude/Codex**: Use \ppend_to_prompt\ (text followed by image paths).
+   - **Gemini**: Uses \prompt_with_arg\ (formatting as \--image path1 "text"\).
+4. **Legacy Field Preservation**: Legacy fields are kept in the store interface for compatibility but marked as legacy/migrating.
+
+## Modified Files
+- \src/renderer/stores/settings/types.ts\: New types for \gentInput\.
+- \src/renderer/stores/settings/defaults.ts\: Default settings.
+- \src/renderer/stores/settings/index.ts\: Store state and setters.
+- \src/renderer/stores/settings/migration.ts\: Auto-migration logic.
+- \src/renderer/components/chat/AgentPanel.tsx\: Logic for rendering/auto-popup.
+- \src/renderer/components/chat/AgentTerminal.tsx\: Hotkey and auto-hide logic.
+- \src/renderer/components/chat/EnhancedInputContainer.tsx\: Component state.
+- \src/renderer/components/settings/IntegrationSettings.tsx\: Refactored Settings UI.
+- \src/renderer/lib/enhancedInputFormatter.ts\: Agent-specific message formatting.
+
+## Pending Issues / Next Steps
+1. **Functional Verification**: Manually verify with Gemini CLI to ensure the \--image\ argument formatting is correctly parsed by the tool.
+2. **i18n Updates**: New strings were added to \IntegrationSettings.tsx\ (e.g., "Agent Input", "General settings for the Enhanced Input..."). Ensure these are added to \src/shared/i18n/locales/*.json\.
+3. **Stop Hook Dependency**: The "Hide While Running" mode still checks \claudeCodeIntegration.stopHookEnabled\ because only Claude currently supports this precise completion signal. Future work could generalize this hook for other agents.
+
+## Suggested Skills
+- \diagnose\: Use to debug any formatting issues if a specific agent CLI fails to parse the formatted input.
+- \	o-issues\: Use to break down the i18n updates into small tasks for different locales.
+

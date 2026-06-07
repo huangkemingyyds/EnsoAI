@@ -37,7 +37,7 @@ export interface AgentCapabilities {
     /** Whether to automatically clean up temporary input files (.ensoai-input) on session end */
     autoCleanup?: boolean;
   };
-  /** Whether the agent provides a reliable completion signal (e.g. Stop Hook) */
+  /** Whether the agent provides a reliable completion signal (e.g. Stop Hook or output-pattern adapter) */
   hasCompletionSignal?: boolean;
 }
 
@@ -47,6 +47,7 @@ export interface AgentMetadata {
   description: string;
   icon: string;
   binary: string;
+  command?: string;
   defaultModel?: string;
   capabilities: AgentCapabilities;
 }

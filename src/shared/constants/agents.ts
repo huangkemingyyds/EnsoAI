@@ -1,19 +1,4 @@
-import type {
-  AgentCapabilities,
-  EnhancedInputCapability,
-  EnhancedInputImageMode,
-} from '../types/agent';
-
-export interface AgentMetadata {
-  id: string;
-  name: string;
-  command: string;
-  description: string;
-  icon: string;
-  capabilities: AgentCapabilities;
-  /** Regex pattern to detect agent prompt completion in terminal output */
-  completionPattern?: string;
-}
+import type { AgentCapabilities, AgentMetadata, EnhancedInputCapability } from '../types/agent';
 
 export const BUILTIN_AGENT_IDS = [
   'claude',
@@ -32,7 +17,7 @@ const DEFAULT_ENHANCED_INPUT: Required<EnhancedInputCapability> = {
   multiline: true,
   imageInput: {
     supported: true,
-    mode: 'append_to_prompt' as EnhancedInputImageMode,
+    mode: 'append_to_prompt',
     injectionTemplate: undefined,
   },
   slashCommandCompletion: false,
@@ -45,7 +30,27 @@ const DEFAULT_CAPABILITIES: AgentCapabilities = {
   fileRead: true,
   fileWrite: true,
   enhancedInput: DEFAULT_ENHANCED_INPUT,
-  hasCompletionSignal: false,
+  completionDetection: {
+    outputPattern: '^[\\s\\S]*?([\\$\\?\\>]\\s*)$',
+    idleMs: 3000,
+    minRunningMs: 1000,
+  },
+  sessionControl: {
+    canReset: true,
+    autoCleanup: true,
+  },
+  hasCompletionSignal: true,
+};
+
+const DEFAULT_AGENT_METADATA: Record<
+  Exclude<BuiltinAgentId, 'claude' | 'codex' | 'gemini'>,
+  { name: string; command: string; description: string }
+> = {
+  droid: { name: 'Droid', command: 'droid', description: 'Droid AI CLI' },
+  auggie: { name: 'Auggie', command: 'auggie', description: 'Augment Code CLI' },
+  cursor: { name: 'Cursor', command: 'cursor-agent', description: 'Cursor Agent CLI' },
+  opencode: { name: 'OpenCode', command: 'opencode', description: 'OpenCode AI CLI' },
+  pi: { name: 'Pi', command: 'pi', description: 'Pi Coding Agent CLI' },
 };
 
 export const AGENT_REGISTRY: Record<string, AgentMetadata> = {
@@ -53,6 +58,7 @@ export const AGENT_REGISTRY: Record<string, AgentMetadata> = {
     id: 'claude',
     name: 'Claude',
     command: 'claude',
+    binary: 'claude',
     description: 'Anthropic Claude Code CLI',
     icon: 'claude',
     capabilities: {
@@ -61,27 +67,38 @@ export const AGENT_REGISTRY: Record<string, AgentMetadata> = {
         ...DEFAULT_ENHANCED_INPUT,
         slashCommandCompletion: true,
       },
+      completionDetection: {
+        useWebSocket: true,
+        outputPattern: '^[\\s\\S]*?([\\$\\?]\\s*)$',
+        idleMs: 3000,
+        minRunningMs: 1000,
+      },
       hasCompletionSignal: true,
     },
-    // Claude uses Stop Hook (WebSocket), but we can have a fallback pattern
-    completionPattern: '^[\\s\\S]*?([\\$\\?]\\s*)$',
   },
   codex: {
     id: 'codex',
     name: 'Codex',
     command: 'codex',
-    description: 'EnsoAI Codex CLI',
+    binary: 'codex',
+    description: 'OpenAI Codex CLI',
     icon: 'codex',
     capabilities: {
       ...DEFAULT_CAPABILITIES,
       enhancedInput: DEFAULT_ENHANCED_INPUT,
+      completionDetection: {
+        outputPattern: '(?m)^>\\s*$',
+        idleMs: 2000,
+        minRunningMs: 1000,
+      },
+      hasCompletionSignal: true,
     },
-    completionPattern: '^[\\s\\S]*?([\\$\\?]\\s*)$',
   },
   gemini: {
     id: 'gemini',
     name: 'Gemini',
     command: 'gemini',
+    binary: 'gemini',
     description: 'Google Gemini CLI',
     icon: 'gemini',
     capabilities: {
@@ -94,20 +111,25 @@ export const AGENT_REGISTRY: Record<string, AgentMetadata> = {
           injectionTemplate: undefined,
         },
       },
+      completionDetection: {
+        outputPattern: '(?m)^>\\s*$',
+        idleMs: 2000,
+        minRunningMs: 1000,
+      },
+      hasCompletionSignal: true,
     },
-    completionPattern: '^[\\s\\S]*?([\\>\\?]\\s*)$',
   },
   // Add other builtin agents with defaults
-  ...BUILTIN_AGENT_IDS.filter((id) => !['claude', 'codex', 'gemini'].includes(id)).reduce(
-    (acc, id) => {
+  ...Object.entries(DEFAULT_AGENT_METADATA).reduce(
+    (acc, [id, metadata]) => {
       acc[id] = {
         id,
-        name: id.charAt(0).toUpperCase() + id.slice(1),
-        command: id === 'cursor' ? 'cursor-agent' : id,
-        description: `${id.charAt(0).toUpperCase() + id.slice(1)} Agent`,
+        name: metadata.name,
+        command: metadata.command,
+        binary: metadata.command,
+        description: metadata.description,
         icon: id,
         capabilities: DEFAULT_CAPABILITIES,
-        completionPattern: '^[\\s\\S]*?([\\$\\?\\>]\\s*)$',
       };
       return acc;
     },

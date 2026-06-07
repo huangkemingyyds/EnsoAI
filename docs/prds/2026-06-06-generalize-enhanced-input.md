@@ -4,6 +4,8 @@ Target issue tracker label: `ready-for-agent`
 
 Publication note: this PRD is ready to publish as a GitHub issue in `J3n5en/EnsoAI`, but the GitHub connector returned `403 Resource not accessible by integration` when issue creation was attempted.
 
+Follow-up note: the phase-one `cli_arg` fallback decision is superseded by `2026-06-07-agent-capability-registry-and-image-protocol-followup.md`, which rejects `cli_arg` image sending in active Agent Sessions instead of appending image paths to the prompt.
+
 ## Problem Statement
 
 EnsoAI currently gives users a richer Enhanced Input experience primarily when they are using Claude. Users who run Codex, Gemini, or a Custom Agent inside an Agent Session fall back to raw terminal input, even though the Chat Workspace already has an input surface that can compose multiline prompts and attach image paths.

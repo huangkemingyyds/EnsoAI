@@ -23,11 +23,12 @@ describe('resolveAgentCapabilities', () => {
     expect(capabilities.hasCompletionSignal).toBe(true);
   });
 
-  it('resolves Codex as supporting Enhanced Input but without completion signal', () => {
+  it('resolves Codex as supporting Enhanced Input with an output-pattern completion signal', () => {
     const capabilities = resolveAgentCapabilities('codex');
 
     expect(capabilities.enhancedInput.supported).toBe(true);
-    expect(capabilities.hasCompletionSignal).toBe(false);
+    expect(capabilities.completionDetection.outputPattern).toBe('(?m)^>\\s*$');
+    expect(capabilities.hasCompletionSignal).toBe(true);
   });
 
   it('resolves Gemini with prompt-with-arg image input mode', () => {
@@ -44,17 +45,17 @@ describe('resolveAgentCapabilities', () => {
     expect(capabilities.enhancedInput.slashCommandCompletion).toBe(true);
   });
 
-  it('resolves Custom and unknown Agents with default Enhanced Input support', () => {
+  it('resolves Custom and unknown Agents with conservative image input defaults', () => {
     const custom = resolveAgentCapabilities('my-agent', {
       customAgents: [{ id: 'my-agent', name: 'My Agent', command: 'my-agent' }],
     });
     const unknown = resolveAgentCapabilities('new-agent');
 
     expect(custom.enhancedInput.supported).toBe(true);
-    expect(custom.enhancedInput.imageInput.mode).toBe('append_to_prompt');
+    expect(custom.enhancedInput.imageInput.supported).toBe(false);
     expect(custom.enhancedInput.slashCommandCompletion).toBe(false);
     expect(unknown.enhancedInput.supported).toBe(true);
-    expect(unknown.enhancedInput.imageInput.mode).toBe('append_to_prompt');
+    expect(unknown.enhancedInput.imageInput.supported).toBe(false);
     expect(unknown.enhancedInput.slashCommandCompletion).toBe(false);
   });
 

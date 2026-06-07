@@ -305,11 +305,6 @@ function migrateClaudeCodeIntegration(
     merged.enhancedInputAutoPopup = legacyAutoPopup ? 'hideWhileRunning' : 'manual';
   }
 
-  // Fix inconsistent state: hideWhileRunning requires stopHookEnabled
-  if (merged.enhancedInputAutoPopup === 'hideWhileRunning' && !merged.stopHookEnabled) {
-    merged.enhancedInputAutoPopup = 'always';
-  }
-
   return merged;
 }
 

@@ -1,59 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
+import { type ResolvedAgent, resolveEnabledAgent as resolveAgent } from '@/lib/enabledAgent';
 import { useSettingsStore } from '@/stores/settings';
 
-// Agent display names and commands (same as SessionBar)
-const AGENT_INFO: Record<string, { name: string; command: string }> = {
-  claude: { name: 'Claude', command: 'claude' },
-  codex: { name: 'Codex', command: 'codex' },
-  droid: { name: 'Droid', command: 'droid' },
-  gemini: { name: 'Gemini', command: 'gemini' },
-  auggie: { name: 'Auggie', command: 'auggie' },
-  cursor: { name: 'Cursor', command: 'cursor-agent' },
-  opencode: { name: 'OpenCode', command: 'opencode' },
-  pi: { name: 'Pi', command: 'pi' },
-};
-
-export interface ResolvedAgent {
-  agentId: string;
-  name: string;
-  command: string;
-  isDefault: boolean;
-  environment: 'native' | 'hapi' | 'happy';
-  customPath?: string;
-  customArgs?: string;
-}
-
-/** Resolve an agentId into display name, command, environment, and custom settings */
-export function resolveAgent(
-  agentId: string,
-  agentSettings: Record<
-    string,
-    { enabled?: boolean; isDefault?: boolean; customPath?: string; customArgs?: string }
-  >,
-  customAgents: { id: string; name: string; command: string }[]
-): ResolvedAgent {
-  const isHapi = agentId.endsWith('-hapi');
-  const isHappy = agentId.endsWith('-happy');
-  const baseId = isHapi ? agentId.slice(0, -5) : isHappy ? agentId.slice(0, -6) : agentId;
-
-  const customAgent = customAgents.find((a) => a.id === baseId);
-  const baseName = customAgent?.name ?? AGENT_INFO[baseId]?.name ?? baseId;
-  const command = customAgent?.command ?? AGENT_INFO[baseId]?.command ?? 'claude';
-  const name = isHapi ? `${baseName} (Hapi)` : isHappy ? `${baseName} (Happy)` : baseName;
-  const environment = isHapi ? 'hapi' : isHappy ? 'happy' : 'native';
-  const isDefault = !!agentSettings[agentId]?.isDefault;
-  const config = agentSettings[baseId];
-
-  return {
-    agentId,
-    name,
-    command,
-    isDefault,
-    environment,
-    customPath: config?.customPath,
-    customArgs: config?.customArgs,
-  };
-}
+export { resolveAgent };
+export type { ResolvedAgent };
 
 /** Hook that returns the list of enabled & installed agents, sorted with default first */
 export function useEnabledAgents(): ResolvedAgent[] {

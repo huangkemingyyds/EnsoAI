@@ -1,7 +1,13 @@
+import { AGENT_REGISTRY } from '@shared/constants/agents';
 import type { AgentCapabilities, EnhancedInputCapability } from '@shared/types';
 
 export interface ResolveAgentCapabilitiesOptions {
-  customAgents?: Array<{ id: string; name: string; command: string }>;
+  customAgents?: Array<{
+    id: string;
+    name: string;
+    command: string;
+    capabilities?: Partial<AgentCapabilities>;
+  }>;
   agentSettings?: Record<string, unknown>;
 }
 
@@ -32,7 +38,7 @@ const DEFAULT_CAPABILITIES: ResolvedAgentCapabilities = {
   fileWrite: true,
   enhancedInput: DEFAULT_ENHANCED_INPUT,
   completionDetection: {
-    useWebSocket: false,
+    outputPattern: '^[\\s\\S]*?([\\$\\?\\>]\\s*)$',
     idleMs: 3000,
     minRunningMs: 1000,
   },
@@ -40,52 +46,20 @@ const DEFAULT_CAPABILITIES: ResolvedAgentCapabilities = {
     canReset: true,
     autoCleanup: true,
   },
-  hasCompletionSignal: false,
+  hasCompletionSignal: true,
 };
 
-const BUILTIN_CAPABILITY_OVERRIDES: Record<string, Partial<ResolvedAgentCapabilities>> = {
-  claude: {
-    enhancedInput: {
-      ...DEFAULT_ENHANCED_INPUT,
-      slashCommandCompletion: true,
-    },
-    completionDetection: {
-      useWebSocket: true,
-    },
-    sessionControl: {
-      canReset: true,
-      autoCleanup: true,
-    },
-    hasCompletionSignal: true,
+const CONSERVATIVE_ENHANCED_INPUT: ResolvedAgentCapabilities['enhancedInput'] = {
+  ...DEFAULT_ENHANCED_INPUT,
+  imageInput: {
+    supported: false,
+    mode: 'append_to_prompt',
   },
-  codex: {
-    enhancedInput: DEFAULT_ENHANCED_INPUT,
-    completionDetection: {
-      outputPattern: '(?m)^>\\s*$', // Standard Codex prompt
-      idleMs: 2000,
-    },
-    sessionControl: {
-      canReset: true,
-      autoCleanup: true,
-    },
-  },
-  gemini: {
-    enhancedInput: {
-      ...DEFAULT_ENHANCED_INPUT,
-      imageInput: {
-        supported: true,
-        mode: 'prompt_with_arg',
-      },
-    },
-    completionDetection: {
-      outputPattern: '(?m)^>\\s*$', // Standard Gemini prompt
-      idleMs: 2000,
-    },
-    sessionControl: {
-      canReset: true,
-      autoCleanup: true,
-    },
-  },
+};
+
+const CONSERVATIVE_CAPABILITIES: ResolvedAgentCapabilities = {
+  ...DEFAULT_CAPABILITIES,
+  enhancedInput: CONSERVATIVE_ENHANCED_INPUT,
 };
 
 export function getBaseAgentId(agentId: string): string {
@@ -95,20 +69,25 @@ export function getBaseAgentId(agentId: string): string {
 
 export function resolveAgentCapabilities(
   agentId: string,
-  _options: ResolveAgentCapabilitiesOptions = {}
+  options: ResolveAgentCapabilitiesOptions = {}
 ): ResolvedAgentCapabilities {
   if (!agentId) return DEFAULT_CAPABILITIES;
   const baseAgentId = getBaseAgentId(agentId);
-  const override = BUILTIN_CAPABILITY_OVERRIDES[baseAgentId] ?? {};
+  const builtInCapabilities = AGENT_REGISTRY[baseAgentId]?.capabilities;
+  const customCapabilities = options.customAgents?.find(
+    (agent) => agent.id === baseAgentId
+  )?.capabilities;
+  const baseCapabilities = builtInCapabilities ? DEFAULT_CAPABILITIES : CONSERVATIVE_CAPABILITIES;
+  const override = builtInCapabilities ?? customCapabilities ?? {};
 
   return {
-    ...DEFAULT_CAPABILITIES,
+    ...baseCapabilities,
     ...override,
     enhancedInput: {
-      ...DEFAULT_CAPABILITIES.enhancedInput,
+      ...baseCapabilities.enhancedInput,
       ...override.enhancedInput,
       imageInput: {
-        ...DEFAULT_CAPABILITIES.enhancedInput.imageInput,
+        ...baseCapabilities.enhancedInput.imageInput,
         ...override.enhancedInput?.imageInput,
       },
     },

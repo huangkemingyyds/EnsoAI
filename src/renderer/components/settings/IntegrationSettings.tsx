@@ -1,15 +1,5 @@
 import * as React from 'react';
 import {
-  AlertDialog,
-  AlertDialogClose,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogPopup,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
-import {
   Select,
   SelectItem,
   SelectPopup,
@@ -18,6 +8,10 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useI18n } from '@/i18n';
+import {
+  canSelectAgentInputAutoPopupMode,
+  shouldShowStopHookDependencyDialog,
+} from '@/lib/agentInputSettings';
 import { useSettingsStore } from '@/stores/settings';
 import { ProviderList } from './claude-provider';
 import { KeybindingInput } from './KeybindingsSettings';
@@ -36,9 +30,12 @@ export function IntegrationSettings({ scrollToProvider }: IntegrationSettingsPro
   const { agentInput, setAgentInput, claudeCodeIntegration, setClaudeCodeIntegration } =
     useSettingsStore();
   const [bridgePort, setBridgePort] = React.useState<number | null>(null);
-  const [showDependencyDialog, setShowDependencyDialog] = React.useState(false);
   const [tmuxError, setTmuxError] = React.useState<string | null>(null);
   const isWindows = window.electronAPI?.env?.platform === 'win32';
+  const canSelectHideWhileRunning = canSelectAgentInputAutoPopupMode({
+    mode: 'hideWhileRunning',
+    claudeStopHookEnabled: claudeCodeIntegration.stopHookEnabled,
+  });
 
   const debounceOptions = React.useMemo(
     () =>
@@ -135,21 +132,21 @@ export function IntegrationSettings({ scrollToProvider }: IntegrationSettingsPro
               </div>
             </label>
             <label
-              className={`flex items-start gap-2 rounded-md p-2 ${!claudeCodeIntegration.stopHookEnabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted/50 cursor-pointer'}`}
+              className={`flex items-start gap-2 rounded-md p-2 ${canSelectHideWhileRunning ? 'hover:bg-muted/50 cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}
             >
               <input
                 type="radio"
                 name="enhancedInputAutoPopup"
                 checked={agentInput.autoPopupMode === 'hideWhileRunning'}
                 onChange={() => setAgentInput({ autoPopupMode: 'hideWhileRunning' })}
-                disabled={!claudeCodeIntegration.stopHookEnabled}
+                disabled={!canSelectHideWhileRunning}
                 className="h-4 w-4 mt-0.5 shrink-0"
               />
               <div className="space-y-0.5">
                 <span className="text-sm font-medium">{t('Hide While Running')}</span>
                 <p className="text-xs text-muted-foreground">
                   {t(
-                    'Auto-hide while running; completion auto-popup requires an Agent completion signal (e.g. Claude)'
+                    "Auto-hide while running; completion auto-popup uses each Agent's declared completion signal"
                   )}
                 </p>
               </div>
@@ -230,49 +227,18 @@ export function IntegrationSettings({ scrollToProvider }: IntegrationSettingsPro
             <Switch
               checked={claudeCodeIntegration.stopHookEnabled}
               onCheckedChange={(checked) => {
-                if (!checked && agentInput.autoPopupMode === 'hideWhileRunning') {
-                  // Show dependency dialog when disabling and hideWhileRunning is selected
-                  setShowDependencyDialog(true);
-                } else {
-                  setClaudeCodeIntegration({ stopHookEnabled: checked });
+                if (
+                  shouldShowStopHookDependencyDialog({
+                    nextStopHookEnabled: checked,
+                    agentInputAutoPopupMode: agentInput.autoPopupMode,
+                  })
+                ) {
+                  return;
                 }
+                setClaudeCodeIntegration({ stopHookEnabled: checked });
               }}
             />
           </div>
-
-          {/* Dependency Dialog */}
-          <AlertDialog open={showDependencyDialog}>
-            <AlertDialogPopup>
-              <AlertDialogHeader>
-                <AlertDialogTitle>{t('Feature Dependency')}</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {t(
-                    '"Hide While Running" mode requires "Enhanced Notification". Display mode will be switched to "Always Show".'
-                  )}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogClose
-                  render={(props) => (
-                    <Button
-                      {...props}
-                      onClick={() => {
-                        setClaudeCodeIntegration({
-                          stopHookEnabled: false,
-                        });
-                        setAgentInput({
-                          autoPopupMode: 'always',
-                        });
-                        setShowDependencyDialog(false);
-                      }}
-                    >
-                      {t('Confirm')}
-                    </Button>
-                  )}
-                />
-              </AlertDialogFooter>
-            </AlertDialogPopup>
-          </AlertDialog>
 
           {/* Ask User Question Notification */}
           <div className="flex items-center justify-between">
