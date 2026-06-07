@@ -7,6 +7,7 @@ import { Dialog, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { useI18n } from '@/i18n';
+import { resolveAgentCapabilities } from '@/lib/agentCapabilities';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings';
 import { BUILTIN_AGENT_INFO, BUILTIN_AGENTS } from './constants';
@@ -405,6 +406,7 @@ export function AgentSettings() {
                 const config = agentSettings[agentId];
                 const canEnable = isDetected && isInstalled;
                 const canSetDefault = canEnable && config?.enabled;
+                const capabilities = resolveAgentCapabilities(agentId);
 
                 return (
                   <motion.div
@@ -430,6 +432,18 @@ export function AgentSettings() {
                             v{detectionInfo.version}
                           </span>
                         )}
+                        <div className="flex gap-1 ml-1">
+                          {capabilities.enhancedInput.imageInput.supported && (
+                            <span className="whitespace-nowrap rounded border border-blue-500/30 bg-blue-500/10 px-1 py-0.5 text-[10px] text-blue-600 dark:text-blue-400">
+                              {t('Image')}
+                            </span>
+                          )}
+                          {capabilities.enhancedInput.slashCommandCompletion && (
+                            <span className="whitespace-nowrap rounded border border-purple-500/30 bg-purple-500/10 px-1 py-0.5 text-[10px] text-purple-600 dark:text-purple-400">
+                              {t('Slash')}
+                            </span>
+                          )}
+                        </div>
                         {isDetected && !isInstalled && (
                           <span className="whitespace-nowrap rounded bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive">
                             {t('Not installed')}

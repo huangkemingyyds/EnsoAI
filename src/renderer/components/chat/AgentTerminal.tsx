@@ -1,9 +1,10 @@
-import { ArrowDown } from 'lucide-react';
+import { ArrowDown, Plus, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   TerminalSearchBar,
   type TerminalSearchBarRef,
 } from '@/components/terminal/TerminalSearchBar';
+import { Button } from '@/components/ui/button';
 import { toastManager } from '@/components/ui/toast';
 import { useFileDrop } from '@/hooks/useFileDrop';
 import { useTerminalScrollToBottom } from '@/hooks/useTerminalScrollToBottom';
@@ -49,6 +50,8 @@ interface AgentTerminalProps {
   onSplit?: () => void;
   onMerge?: () => void;
   onFocus?: () => void; // called when terminal is clicked/focused to activate the group
+  onResetSession?: () => void;
+  onNewSession?: () => void;
   onRegisterEnhancedInputSender?: (
     sessionId: string,
     sender: (content: string, imagePaths: string[]) => void
@@ -59,9 +62,9 @@ interface AgentTerminalProps {
 const MIN_RUNTIME_FOR_AUTO_CLOSE = 10000; // 10 seconds
 const MIN_OUTPUT_FOR_NOTIFICATION = 100; // Minimum chars to consider agent is doing work
 const MIN_OUTPUT_FOR_INDICATOR = 200; // Minimum chars to show "outputting" indicator (higher to avoid noise)
-const ACTIVITY_POLL_INTERVAL_MS = 1000; // Poll process activity every 1000ms
-const IDLE_CONFIRMATION_COUNT = 2; // Require 2 consecutive idle polls (2 seconds) before marking as idle
-const RECENT_OUTPUT_TIMEOUT_MS = 3000; // If output received within this time, consider still active
+const _ACTIVITY_POLL_INTERVAL_MS = 1000; // Poll process activity every 1000ms
+const _IDLE_CONFIRMATION_COUNT = 2; // Require 2 consecutive idle polls (2 seconds) before marking as idle
+const _RECENT_OUTPUT_TIMEOUT_MS = 3000; // If output received within this time, consider still active
 
 export function AgentTerminal({
   id,
@@ -88,10 +91,21 @@ export function AgentTerminal({
   onSplit,
   onMerge,
   onFocus,
+  onResetSession,
+  onNewSession,
   onRegisterEnhancedInputSender,
   onUnregisterEnhancedInputSender,
 }: AgentTerminalProps) {
+  const terminalSessionId = id ?? sessionId;
+  const resumeSessionId = sessionId ?? id;
   const { t } = useI18n();
+
+  // Find the session object to get error status
+  const currentSession = useAgentSessionsStore((s) =>
+    terminalSessionId ? s.sessions.find((sess) => sess.id === terminalSessionId) : undefined
+  );
+  const hasApiError = currentSession?.hasApiError;
+  const lastError = currentSession?.lastError;
   const {
     agentNotificationEnabled,
     agentNotificationDelay,
@@ -157,12 +171,15 @@ export function AgentTerminal({
   const ptyIdRef = useRef<string | null>(null); // Store PTY ID for activity checks
   const isActiveRef = useRef(isActive); // Track latest isActive value for interval callback
   const lastCommandWasSlashCommand = useRef(false); // Track if last command was a slash command
+  const runStartTimeRef = useRef(0); // Track when the current command started running
+
   const setOutputState = useAgentSessionsStore((s) => s.setOutputState);
   const markSessionActive = useAgentSessionsStore((s) => s.markSessionActive);
   const clearRuntimeState = useAgentSessionsStore((s) => s.clearRuntimeState);
-
-  const terminalSessionId = id ?? sessionId;
-  const resumeSessionId = sessionId ?? id;
+  const updateSession = useAgentSessionsStore((s) => s.updateSession);
+  const outputStateFromStore = useAgentSessionsStore((s) =>
+    terminalSessionId ? (s.runtimeStates[terminalSessionId]?.outputState ?? 'idle') : 'idle'
+  );
 
   // Use external control if provided, otherwise use local state.
   // IMPORTANT: `externalEnhancedInputOpen` can be false, so we must check `undefined` rather than truthiness.
@@ -229,6 +246,10 @@ export function AgentTerminal({
     }
     consecutiveIdleCountRef.current = 0;
 
+    const { idleMs, minRunningMs } = agentCapabilities.completionDetection;
+    const pollInterval = 1000;
+    const requiredIdleCounts = Math.max(1, Math.ceil((idleMs ?? 3000) / pollInterval));
+
     activityPollIntervalRef.current = setInterval(async () => {
       if (!ptyIdRef.current || !isMonitoringOutputRef.current) {
         // Stop polling if no PTY or not monitoring
@@ -242,25 +263,27 @@ export function AgentTerminal({
       try {
         const hasProcessActivity = await window.electronAPI.terminal.getActivity(ptyIdRef.current);
         const now = Date.now();
-        const hasRecentOutput = now - lastOutputTimeRef.current < RECENT_OUTPUT_TIMEOUT_MS;
+        const runtime = now - runStartTimeRef.current;
+        const timeSinceLastOutput = now - lastOutputTimeRef.current;
+        const hasRecentOutput = timeSinceLastOutput < (idleMs ?? 3000);
 
-        if (hasProcessActivity || hasRecentOutput) {
-          // Process is active OR has recent output, reset idle counter
+        // Don't mark as idle if we haven't reached minRunningMs yet
+        const isMinRunningReached = runtime >= (minRunningMs ?? 1000);
+
+        if (hasProcessActivity || hasRecentOutput || !isMinRunningReached) {
+          // Process is active OR has recent output OR still in minRunningMs, reset idle counter
           consecutiveIdleCountRef.current = 0;
           // If we have enough output, show the indicator
           if (outputSinceEnterRef.current > MIN_OUTPUT_FOR_INDICATOR) {
             updateOutputState('outputting');
-            // Activity state is now managed by Hook notifications only
           }
         } else {
-          // Process is idle AND no recent output
+          // Process is idle AND no recent output AND minRunningMs reached
           consecutiveIdleCountRef.current++;
           // Only mark as idle after several consecutive idle polls
-          if (consecutiveIdleCountRef.current >= IDLE_CONFIRMATION_COUNT) {
+          if (consecutiveIdleCountRef.current >= requiredIdleCounts) {
             updateOutputState('idle');
             isMonitoringOutputRef.current = false;
-
-            // Activity state is now managed by Hook notifications only
 
             // Stop polling when confirmed idle
             if (activityPollIntervalRef.current) {
@@ -272,8 +295,8 @@ export function AgentTerminal({
       } catch {
         // Error checking activity, ignore
       }
-    }, ACTIVITY_POLL_INTERVAL_MS);
-  }, [updateOutputState]);
+    }, pollInterval);
+  }, [updateOutputState, agentCapabilities]);
 
   // Stop polling for process activity
   const stopActivityPolling = useCallback(() => {
@@ -414,6 +437,7 @@ export function AgentTerminal({
     const shellName = resolvedShell.shell.toLowerCase();
 
     // Determine if tmux wrapping should be applied
+    // Currently tmux is optimized for Claude's background task management
     const isClaude = agentCommand?.startsWith('claude') ?? false;
     const shouldUseTmux = claudeCodeIntegration.tmuxEnabled && isClaude && !isWindows;
 
@@ -496,6 +520,9 @@ export function AgentTerminal({
   // Track output for error detection and idle notification
   const handleData = useCallback(
     (data: string) => {
+      // Ignore output related to our internal image storage to prevent feedback loops
+      if (data.includes('.ensoai-input')) return;
+
       // Start timer on first data
       if (startTimeRef.current === null) {
         startTimeRef.current = Date.now();
@@ -513,6 +540,21 @@ export function AgentTerminal({
         outputBufferRef.current = outputBufferRef.current.slice(-500);
       }
 
+      // Detect API Errors (Generic check for common CLI agent errors)
+      const hasErrorPattern =
+        data.includes('INVALID_ARGUMENT') ||
+        data.includes('Error 400') ||
+        data.includes('API_ERROR');
+
+      if (terminalSessionId && agentCapabilities.sessionControl.canReset && hasErrorPattern) {
+        updateSession(terminalSessionId, {
+          hasApiError: true,
+          lastError: t(
+            'Agent encountered a fatal API error. Context might be too long or arguments invalid.'
+          ),
+        });
+      }
+
       // Track output volume since last Enter
       dataSinceEnterRef.current += data.length;
 
@@ -525,11 +567,24 @@ export function AgentTerminal({
         // Update to 'outputting' once we have substantial output after Enter
         if (outputSinceEnterRef.current > MIN_OUTPUT_FOR_INDICATOR) {
           updateOutputState('outputting');
-          // Note: Activity state 'running' is set by handleCustomKey (on Enter) and
-          // startActivityPolling (during polling), so no need to set it here
         }
-        // Note: The transition to 'idle' is handled by process activity polling
-        // (startActivityPolling), not by a simple timeout
+
+        // Output Pattern Detection: Immediate idle if pattern matches (e.g. prompt)
+        const { outputPattern, minRunningMs } = agentCapabilities.completionDetection;
+        if (outputPattern && Date.now() - runStartTimeRef.current >= (minRunningMs ?? 1000)) {
+          // Check last 50 chars for the pattern to signal completion
+          const lastChars = outputBufferRef.current.slice(-50);
+          try {
+            const regex = new RegExp(outputPattern);
+            if (regex.test(lastChars)) {
+              updateOutputState('idle');
+              isMonitoringOutputRef.current = false;
+              stopActivityPolling();
+            }
+          } catch (e) {
+            console.error('[AgentTerminal] Invalid outputPattern regex:', outputPattern, e);
+          }
+        }
       }
 
       // Only arm idle monitoring after receiving substantial output
@@ -543,7 +598,7 @@ export function AgentTerminal({
       }
 
       const stopHookEnabledForSession =
-        claudeCodeIntegration.stopHookEnabled && agentCommand.startsWith('claude');
+        claudeCodeIntegration.stopHookEnabled && agentCapabilities.completionDetection.useWebSocket;
 
       if (!agentNotificationEnabled || !isWaitingForIdleRef.current || stopHookEnabledForSession)
         return;
@@ -581,6 +636,11 @@ export function AgentTerminal({
       terminalSessionId,
       t,
       updateOutputState,
+      agentCapabilities.completionDetection,
+      agentCapabilities.sessionControl.canReset,
+      updateSession,
+      agentCapabilities.completionDetection.useWebSocket,
+      stopActivityPolling,
     ]
   );
 
@@ -633,6 +693,16 @@ export function AgentTerminal({
         !event.altKey &&
         !event.isComposing
       ) {
+        // Block Enter if agent is already running to prevent duplicate commands
+        if (outputStateFromStore === 'outputting') {
+          toastManager.add({
+            type: 'warning',
+            title: t('Agent is running'),
+            description: t('Please wait for the current task to complete'),
+          });
+          return false;
+        }
+
         // First Enter activates the session; optionally pass current line for session name.
         if (!hasActivatedRef.current && !activated) {
           hasActivatedRef.current = true;
@@ -644,6 +714,7 @@ export function AgentTerminal({
         }
         // Reset output counter.
         dataSinceEnterRef.current = 0;
+        runStartTimeRef.current = Date.now();
         const currentLine = getCurrentLine?.() ?? null;
 
         // Detect if user entered a slash command (like /clear, /help, etc.)
@@ -717,6 +788,7 @@ export function AgentTerminal({
       enhancedInputOpen,
       setEnhancedInputOpen,
       t,
+      outputStateFromStore,
     ]
   );
 
@@ -931,6 +1003,15 @@ export function AgentTerminal({
     async (content: string, imagePaths: string[]) => {
       if (!write || !terminalSessionId) return;
 
+      if (outputStateFromStore === 'outputting') {
+        toastManager.add({
+          type: 'warning',
+          title: t('Agent is running'),
+          description: t('Please wait for the current task to complete'),
+        });
+        return;
+      }
+
       const message = formatEnhancedInputForAgent({
         capabilities: agentCapabilities,
         content,
@@ -952,7 +1033,7 @@ export function AgentTerminal({
 
       terminal?.focus();
     },
-    [write, terminalSessionId, terminal, agentCapabilities]
+    [write, terminalSessionId, terminal, agentCapabilities, outputStateFromStore, t]
   );
 
   useEffect(() => {
@@ -1008,6 +1089,57 @@ export function AgentTerminal({
             <span style={{ color: settings.theme.foreground, opacity: 0.5 }} className="text-sm">
               {t('Loading {{agent}}...', { agent: agentCommand })}
             </span>
+          </div>
+        </div>
+      )}
+
+      {/* API Error Overlay */}
+      {hasApiError && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-background/80 p-6 text-center backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-2 max-w-md">
+            <span className="text-destructive font-bold text-lg">⚠️ API Error</span>
+            <p className="text-sm text-muted-foreground">
+              {lastError || t('A fatal API error occurred.')}
+            </p>
+          </div>
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => {
+                if (terminalSessionId) {
+                  updateSession(terminalSessionId, { hasApiError: false, lastError: undefined });
+                }
+                onResetSession?.();
+              }}
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              {t('Reset Session')}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                if (terminalSessionId) {
+                  updateSession(terminalSessionId, { hasApiError: false, lastError: undefined });
+                }
+                onNewSession?.();
+              }}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              {t('New Session')}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (terminalSessionId) {
+                  updateSession(terminalSessionId, { hasApiError: false, lastError: undefined });
+                }
+              }}
+            >
+              {t('Dismiss')}
+            </Button>
           </div>
         </div>
       )}

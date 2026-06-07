@@ -49,7 +49,8 @@ function isResumableAgent(agentCommand: string): boolean {
  * Prevents cross-repo session pollution when different repos have worktrees
  * with the same path name.
  */
-function makeActiveKey(repoPath: string, cwd: string): string {
+export function makeActiveKey(repoPath: string, cwd: string): string {
+  if (!repoPath || !cwd) return 'unknown';
   return `${normalizePath(repoPath)}::${normalizePath(cwd)}`;
 }
 

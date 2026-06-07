@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { resolveAgentCapabilities } from '@/lib/agentCapabilities';
 import { useAgentSessionsStore } from '@/stores/agentSessions';
 import { useSettingsStore } from '@/stores/settings';
 import { EnhancedInput } from './EnhancedInput';
@@ -20,10 +21,19 @@ export const EnhancedInputContainer = memo(function EnhancedInputContainer({
   sessionId,
   onSend,
   isActive = false,
-  slashCommandCompletionEnabled = false,
+  slashCommandCompletionEnabled: _slashCommandCompletionEnabled = false,
 }: EnhancedInputContainerProps) {
   // Subscribe to only this session's enhanced input state
   const enhancedInputState = useAgentSessionsStore((state) => state.enhancedInputStates[sessionId]);
+  const outputState = useAgentSessionsStore(
+    (state) => state.runtimeStates[sessionId]?.outputState ?? 'idle'
+  );
+  const isAgentRunning = outputState === 'outputting';
+
+  const session = useAgentSessionsStore((state) => state.sessions.find((s) => s.id === sessionId));
+  const agentCapabilities = session ? resolveAgentCapabilities(session.agentId) : null;
+  const supportsSlash = agentCapabilities?.enhancedInput?.slashCommandCompletion ?? false;
+
   const setEnhancedInputOpen = useAgentSessionsStore((state) => state.setEnhancedInputOpen);
   const setEnhancedInputContent = useAgentSessionsStore((state) => state.setEnhancedInputContent);
   const setEnhancedInputImages = useAgentSessionsStore((state) => state.setEnhancedInputImages);
@@ -64,7 +74,8 @@ export const EnhancedInputContainer = memo(function EnhancedInputContainer({
       keepOpenAfterSend={keepOpenAfterSend}
       isActive={isActive}
       cwd={cwd}
-      slashCommandCompletionEnabled={slashCommandCompletionEnabled}
+      slashCommandCompletionEnabled={supportsSlash}
+      isAgentRunning={isAgentRunning}
     />
   );
 });

@@ -35,11 +35,14 @@ interface EnhancedInputProps {
   cwd?: string;
   /** Whether Claude slash command completion is available for this Agent Session */
   slashCommandCompletionEnabled?: boolean;
+  /** Whether the agent is currently running (outputting) */
+  isAgentRunning?: boolean;
 }
 
 const MAX_IMAGES = 5;
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
 const DEFAULT_MIN_H = 32;
+const LARGE_TEXT_THRESHOLD = 5000; // 5000 chars
 
 export function EnhancedInput({
   open,
@@ -54,6 +57,7 @@ export function EnhancedInput({
   isActive = false,
   cwd,
   slashCommandCompletionEnabled = false,
+  isAgentRunning = false,
 }: EnhancedInputProps) {
   const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -79,6 +83,9 @@ export function EnhancedInput({
   const slashListRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    let alive = true;
+    // We already have slashCommandCompletionEnabled as a prop,
+    // which is derived from agentCapabilities in the Container.
     if (!slashCommandCompletionEnabled) {
       setSlashItems([]);
       setSlashQuery(null);
@@ -86,7 +93,6 @@ export function EnhancedInput({
       return;
     }
 
-    let alive = true;
     const api = window.electronAPI?.claudeCompletions;
     if (!api) return;
 
@@ -400,6 +406,17 @@ export function EnhancedInput({
   // Draft is now preserved in store - no reset on close
 
   const handleSend = useCallback(async () => {
+    if (isAgentRunning) {
+      toastManager.add({
+        type: 'warning',
+        title: t('Agent is running'),
+        description: t(
+          'Please wait for the current task to complete before sending new instructions'
+        ),
+      });
+      return;
+    }
+
     const trimmed = content.trim();
     if (!trimmed && imagePaths.length === 0) return;
     try {
@@ -435,8 +452,8 @@ export function EnhancedInput({
     onOpenChange,
     t,
     slashCommandCompletionEnabled,
+    isAgentRunning,
   ]);
-
   const getImageExtension = useCallback((file: File): string => {
     const mime = file.type.toLowerCase();
     const mimeMap: Record<string, string> = {
@@ -575,8 +592,12 @@ export function EnhancedInput({
         const extension = getImageExtension(file);
         const filename = `ensoai-input-${timestamp}-${random}.${extension}`;
 
-        // Save to temp directory via electron API
-        const result = await window.electronAPI.file.saveToTemp(filename, buffer);
+        // If we have a workspace directory, save to .ensoai-input within it.
+        // This solves permission/access issues for CLI agents like Gemini.
+        const targetDir = cwd ? `${cwd}/.ensoai-input` : undefined;
+
+        // Save to target directory via electron API
+        const result = await window.electronAPI.file.saveToTemp(filename, buffer, targetDir);
 
         if (result.success && result.path) {
           return result.path;
@@ -599,7 +620,7 @@ export function EnhancedInput({
         return null;
       }
     },
-    [t, getImageExtension]
+    [t, getImageExtension, cwd]
   );
 
   const addImageFiles = useCallback(
@@ -639,6 +660,8 @@ export function EnhancedInput({
       if (!items) return;
 
       const imageFiles: File[] = [];
+      let textContent = '';
+
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
         if (item.type.startsWith('image/')) {
@@ -646,15 +669,63 @@ export function EnhancedInput({
           if (file) {
             imageFiles.push(file);
           }
+        } else if (item.type === 'text/plain') {
+          // We'll get text content via e.clipboardData.getData below
         }
       }
 
       if (imageFiles.length > 0) {
         e.preventDefault();
         await addImageFiles(imageFiles);
+        return;
+      }
+
+      // Handle large text paste
+      textContent = e.clipboardData.getData('text/plain');
+      if (textContent.length > LARGE_TEXT_THRESHOLD && cwd) {
+        e.preventDefault();
+
+        const timestamp = Date.now();
+        const filename = `prompt-${timestamp}.md`;
+        const buffer = new TextEncoder().encode(textContent);
+        const targetDir = `${cwd}/.ensoai-input`;
+
+        toastManager.add({
+          type: 'info',
+          title: t('Large text detected'),
+          description: t('Pasting {{count}} characters. Saving to file to prevent terminal lag.', {
+            count: textContent.length,
+          }),
+        });
+
+        const result = await window.electronAPI.file.saveToTemp(filename, buffer, targetDir);
+
+        if (result.success && result.path) {
+          const relativePath = `.ensoai-input/${filename}`;
+          const instruction = `Please read the content of ${relativePath} and then [your instructions here]`;
+          onContentChange(content + (content ? '\n' : '') + instruction);
+
+          // Focus and select the placeholder for user to easily replace
+          setTimeout(() => {
+            const ta = textareaRef.current;
+            if (ta) {
+              const start = ta.value.indexOf('[your instructions here]');
+              if (start !== -1) {
+                ta.setSelectionRange(start, start + '[your instructions here]'.length);
+                ta.focus();
+              }
+            }
+          }, 0);
+        } else {
+          toastManager.add({
+            type: 'error',
+            title: t('Failed to save large text'),
+            description: result.error || t('Unknown error'),
+          });
+        }
       }
     },
-    [addImageFiles]
+    [addImageFiles, cwd, onContentChange, content, t]
   );
 
   const handleDrop = useCallback(
@@ -840,6 +911,38 @@ export function EnhancedInput({
             <div className="w-8 h-0.5 rounded-full bg-border group-hover:bg-muted-foreground transition-colors" />
           </div>
 
+          {/* Image preview list - shown above textarea when images exist */}
+          {imagePaths.length > 0 && (
+            <div className="flex flex-wrap gap-2 px-3 pb-2 pt-1 border-b border-border/50">
+              {imagePaths.map((path, index) => (
+                <div
+                  key={path}
+                  className="group relative h-16 w-16 rounded-md border border-border bg-muted/30 overflow-hidden shadow-sm"
+                >
+                  {/* biome-ignore lint/a11y/useKeyWithClickEvents: zoom is secondary interaction */}
+                  <img
+                    src={toLocalFileUrl(path)}
+                    alt={getFileName(path)}
+                    onClick={() => setPreviewPath(path)}
+                    className="h-full w-full object-cover cursor-zoom-in transition-transform group-hover:scale-105"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeImagePath(index)}
+                    className="absolute right-0.5 top-0.5 h-4 w-4 rounded-full bg-background/80 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-destructive hover:text-destructive-foreground opacity-0 group-hover:opacity-100 transition-all shadow-sm"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                  <div className="absolute inset-x-0 bottom-0 bg-black/40 px-1 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <p className="truncate text-[8px] text-white text-center">
+                      {getFileName(path)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Textarea */}
           <div onDrop={handleDrop} onDragOver={handleDragOver} className="flex">
             <textarea
@@ -862,37 +965,10 @@ export function EnhancedInput({
             />
           </div>
 
-          {/* Bottom bar: file chips (scrollable) + action buttons */}
-          <div className="flex items-center gap-1 px-2 pb-1.5">
-            {/* File chips - scrollable */}
-            {imagePaths.length > 0 && (
-              <div className="flex-1 min-w-0 overflow-x-auto flex items-center gap-1 scrollbar-none">
-                {imagePaths.map((path, index) => (
-                  <span
-                    key={path}
-                    className="inline-flex items-center shrink-0 max-w-[160px] h-5 rounded border border-border bg-muted/50 text-xs"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setPreviewPath(path)}
-                      className="truncate px-1.5 text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      {getFileName(path)}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => removeImagePath(index)}
-                      className="shrink-0 h-full px-0.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors rounded-r"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-
+          {/* Bottom bar: action buttons */}
+          <div className="flex items-center gap-1 px-2 pb-1.5 justify-end">
             {/* Action buttons - always right-aligned */}
-            <div className="flex items-center gap-0.5 shrink-0 ml-auto">
+            <div className="flex items-center gap-0.5">
               <button
                 type="button"
                 onClick={handleSelectFiles}
@@ -907,7 +983,7 @@ export function EnhancedInput({
                 onClick={() => {
                   void handleSend();
                 }}
-                disabled={!content.trim() && imagePaths.length === 0}
+                disabled={(!content.trim() && imagePaths.length === 0) || isAgentRunning}
                 className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:pointer-events-none disabled:opacity-40"
                 aria-label={t('Send')}
               >

@@ -46,6 +46,8 @@ export interface Session {
   terminalTitle?: string; // current terminal title from OSC escape sequence
   userRenamed?: boolean; // true when user has manually renamed this session
   pendingCommand?: string; // command to send after agent is ready (e.g., from todo task)
+  hasApiError?: boolean; // Whether the session has encountered a fatal API error (e.g. Gemini 400)
+  lastError?: string; // Description of the last encountered error
 }
 
 interface SessionBarProps {

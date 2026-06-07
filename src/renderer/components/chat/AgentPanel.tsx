@@ -28,7 +28,7 @@ import { useAgentSessionsStore } from '@/stores/agentSessions';
 import { initAgentStatusListener } from '@/stores/agentStatus';
 import { useAgentTasksStore } from '@/stores/agentTasks';
 import { useCodeReviewContinueStore } from '@/stores/codeReviewContinue';
-import { BUILTIN_AGENT_IDS, useSettingsStore } from '@/stores/settings';
+import { useSettingsStore } from '@/stores/settings';
 import { useTerminalStore } from '@/stores/terminal';
 import { useWorktreeActivityStore } from '@/stores/worktreeActivity';
 import { AgentGroup } from './AgentGroup';
@@ -100,11 +100,10 @@ function getDefaultAgentId(
       return id;
     }
   }
-  // Fallback to first enabled builtin agent
-  for (const id of BUILTIN_AGENT_IDS) {
-    if (agentSettings[id]?.enabled) {
-      return id;
-    }
+  // Fallback to first enabled agent (any agent)
+  const enabledIds = Object.keys(agentSettings).filter((id) => agentSettings[id]?.enabled);
+  if (enabledIds.length > 0) {
+    return enabledIds[0];
   }
   // Ultimate fallback
   return 'claude';
@@ -213,7 +212,7 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
     hapiSettings,
     autoCreateSessionOnActivate,
     autoCreateSessionOnTempActivate,
-    agentInput,
+    agentInput = { enabled: false, autoPopupMode: 'hideWhileRunning' },
     claudeCodeIntegration,
     terminalTheme,
   } = useSettingsStore();
@@ -1028,7 +1027,7 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
   );
 
   const handleNewSessionWithAgent = useCallback(
-    (agentId: string, agentCommand: string, targetGroupId?: string) => {
+    (agentId: string, _agentCommand: string, targetGroupId?: string) => {
       // Handle Hapi and Happy agent IDs
       const isHapi = agentId.endsWith('-hapi');
       const isHappy = agentId.endsWith('-happy');
@@ -1037,32 +1036,21 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
       // Get agent name for display
       const customAgent = customAgents.find((a) => a.id === baseId);
       const baseName = customAgent?.name ?? AGENT_INFO[baseId]?.name ?? 'Agent';
-      const name = isHapi ? `${baseName} (Hapi)` : isHappy ? `${baseName} (Happy)` : baseName;
+      const _name = isHapi ? `${baseName} (Hapi)` : isHappy ? `${baseName} (Happy)` : baseName;
 
       // Determine environment
-      const environment = isHapi ? 'hapi' : isHappy ? 'happy' : 'native';
+      const _environment = isHapi ? 'hapi' : isHappy ? 'happy' : 'native';
 
       // Get custom path and args from settings (for builtin agents)
       const agentConfig = agentSettings[baseId];
-      const customPath = agentConfig?.customPath;
-      const customArgs = agentConfig?.customArgs;
+      const _customPath = agentConfig?.customPath;
+      const _customArgs = agentConfig?.customArgs;
 
-      const id = crypto.randomUUID();
-      const newSession: Session = {
-        id,
-        sessionId: id, // Initialize sessionId with same value as id
-        name,
-        agentId,
-        agentCommand,
-        customPath,
-        customArgs,
-        initialized: false,
-        repoPath,
-        cwd,
-        environment,
-      };
+      const _id = crypto.randomUUID();
+      const newSession = createSession(repoPath, cwd, agentId, customAgents, agentSettings);
 
       addSession(newSession);
+      setActiveId(repoPath, cwd, newSession.id);
 
       // Auto open enhanced input for agents that support it.
       const capabilities = resolveAgentCapabilities(agentId, { customAgents, agentSettings });
@@ -1109,16 +1097,31 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
       });
     },
     [
-      repoPath,
-      cwd,
       customAgents,
       agentSettings,
+      repoPath,
+      cwd,
       addSession,
+      setActiveId,
       updateCurrentGroupState,
       agentInput.enabled,
       agentInput.autoPopupMode,
       setEnhancedInputOpen,
     ]
+  );
+
+  const handleResetSession = useCallback(
+    (sessionId: string, groupId?: string) => {
+      const session = allSessions.find((s) => s.id === sessionId);
+      if (!session) return;
+
+      // Close old session
+      handleCloseSession(sessionId, groupId);
+
+      // Create new session with same agent and settings in the same group
+      handleNewSessionWithAgent(session.agentId, session.agentCommand, groupId);
+    },
+    [allSessions, handleCloseSession, handleNewSessionWithAgent]
   );
 
   // Handle group click
@@ -1623,7 +1626,7 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
                             onClick={() => {
                               handleNewSessionWithAgent(
                                 agentId,
-                                customAgent?.command ?? AGENT_INFO[baseId]?.command ?? 'claude'
+                                customAgent?.command ?? AGENT_INFO[baseId]?.command ?? agentId
                               );
                               setShowAgentMenu(false);
                             }}
@@ -1694,6 +1697,10 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
             if (position) {
               left = position.left;
               width = position.width;
+            } else if (positions.length > 0) {
+              // Fallback to first position if index is out of bounds (should not happen)
+              left = positions[0].left;
+              width = positions[0].width;
             }
             isSessionVisible = info.group.activeSessionId === sessionId;
             groupId = info.group.id;
@@ -1754,6 +1761,8 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
                 canMerge={info ? info.groupIndex > 0 : false}
                 onMerge={() => groupId && handleMerge(groupId)}
                 onFocus={() => groupId && handleSelectSession(sessionId, groupId)}
+                onResetSession={() => handleResetSession(sessionId, groupId || undefined)}
+                onNewSession={() => handleNewSession(groupId || undefined)}
                 enhancedInputOpen={getEnhancedInputState(sessionId).open}
                 onEnhancedInputOpenChange={(open) => {
                   // EnhancedInput open state is now stored per-session in the store
@@ -1785,7 +1794,7 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
         const activeSession = group.activeSessionId
           ? currentWorktreeSessions.find((session) => session.id === group.activeSessionId)
           : undefined;
-        const activeCapabilities = activeSession
+        const activeCapabilities = activeSession?.agentId
           ? resolveAgentCapabilities(activeSession.agentId, { customAgents, agentSettings })
           : null;
         const enhancedInputOpen = group.activeSessionId

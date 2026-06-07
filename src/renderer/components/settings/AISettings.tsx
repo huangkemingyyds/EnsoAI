@@ -86,6 +86,8 @@ export function AISettings() {
   const {
     aiPerformance,
     setAiPerformance,
+    agentInput,
+    setAgentInput,
     commitMessageGenerator,
     setCommitMessageGenerator,
     codeReview,
@@ -153,6 +155,63 @@ export function AISettings() {
         <p className="text-sm text-muted-foreground">
           {t('Configure AI-powered features for code generation and review')}
         </p>
+      </div>
+
+      {/* Performance Optimization Section */}
+      <div className="border-t pt-6">
+        <div>
+          <h4 className="text-base font-medium">{t('Enhanced Input')}</h4>
+          <p className="text-sm text-muted-foreground">
+            {t('Global settings for the multi-agent enhanced input workstation')}
+          </p>
+        </div>
+
+        <div className="mt-4 space-y-4">
+          {/* Global Enable */}
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="text-sm font-medium">{t('Enable Enhanced Input')}</span>
+              <p className="text-xs text-muted-foreground">
+                {t('Show a floating workstation-style input bar at the bottom')}
+              </p>
+            </div>
+            <Switch
+              checked={agentInput.enabled}
+              onCheckedChange={(checked) => setAgentInput({ enabled: checked })}
+            />
+          </div>
+
+          {/* Auto Popup Mode */}
+          <div className="grid grid-cols-[140px_1fr] items-center gap-4">
+            <span className="text-sm font-medium">{t('Auto Popup')}</span>
+            <div className="space-y-1.5">
+              <Select
+                value={agentInput.autoPopupMode}
+                onValueChange={(v) =>
+                  setAgentInput({ autoPopupMode: v as 'always' | 'hideWhileRunning' | 'manual' })
+                }
+              >
+                <SelectTrigger className="w-40">
+                  <SelectValue>
+                    {agentInput.autoPopupMode === 'always'
+                      ? t('Always Open')
+                      : agentInput.autoPopupMode === 'hideWhileRunning'
+                        ? t('On Completion')
+                        : t('Manual Only')}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup>
+                  <SelectItem value="always">{t('Always Open')}</SelectItem>
+                  <SelectItem value="hideWhileRunning">{t('On Completion')}</SelectItem>
+                  <SelectItem value="manual">{t('Manual Only')}</SelectItem>
+                </SelectPopup>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {t('When the input workstation should appear automatically')}
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Performance Optimization Section */}

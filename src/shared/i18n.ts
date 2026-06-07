@@ -823,6 +823,17 @@ export const zhTranslations: Record<string, string> = {
   'Use Claude Stop hook for precise agent completion notifications':
     '使用 Claude Stop hook 获取精确的 Agent 完成通知',
   'Enhanced Input': '增强输入',
+  'Global settings for the multi-agent enhanced input workstation':
+    '多 Agent 增强输入工作台的全局设置',
+  'Enable Enhanced Input': '启用增强输入',
+  'Show a floating workstation-style input bar at the bottom': '在底部显示一个悬浮的工作台式输入栏',
+  'Auto Popup': '自动弹出',
+  'When the input workstation should appear automatically': '输入工作台应在何时自动出现',
+  'Always Open': '始终开启',
+  'On Completion': '任务完成时',
+  'Manual Only': '仅手动',
+  Image: '图片',
+  Slash: '斜杠',
   'Enable enhanced input panel with multi-line editing and image support':
     '启用增强输入面板，支持多行编辑和图片',
   'Display Mode': '显示模式',

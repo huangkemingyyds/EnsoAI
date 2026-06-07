@@ -323,9 +323,10 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.FILE_WRITE, filePath, content, encoding),
     saveToTemp: (
       filename: string,
-      data: Uint8Array
+      data: Uint8Array,
+      targetDir?: string
     ): Promise<{ success: boolean; path?: string; error?: string }> =>
-      ipcRenderer.invoke(IPC_CHANNELS.FILE_SAVE_TO_TEMP, filename, data),
+      ipcRenderer.invoke(IPC_CHANNELS.FILE_SAVE_TO_TEMP, filename, data, targetDir),
     createFile: (
       filePath: string,
       content = '',

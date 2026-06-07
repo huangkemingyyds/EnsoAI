@@ -159,22 +159,22 @@ export async function stopWatchersInDirectory(dirPath: string): Promise<void> {
 }
 
 export function registerFileHandlers(): void {
-  // Save file to temp directory (for enhanced input images)
+  // Save file to a directory (for enhanced input images)
   ipcMain.handle(
     IPC_CHANNELS.FILE_SAVE_TO_TEMP,
     async (
       event,
       filename: string,
-      data: Uint8Array
+      data: Uint8Array,
+      targetDir?: string
     ): Promise<{ success: boolean; path?: string; error?: string }> => {
       try {
-        const tempDir = app.getPath('temp');
-        const ensoaiInputDir = join(tempDir, 'ensoai-input');
+        const baseDir = targetDir || join(app.getPath('temp'), 'ensoai-input');
         ensureFileOwnerCleanup(event.sender);
-        // Allow renderer to preview saved temp images via local-file:// protocol.
-        // Without this, local-file access is denied by default.
-        registerAllowedLocalFileRoot(ensoaiInputDir, event.sender.id);
-        await mkdir(ensoaiInputDir, { recursive: true });
+
+        // Allow renderer to preview saved images via local-file:// protocol.
+        registerAllowedLocalFileRoot(baseDir, event.sender.id);
+        await mkdir(baseDir, { recursive: true });
 
         // Defense-in-depth: never trust renderer-controlled path segments.
         const safeName = basename(filename);
@@ -182,11 +182,11 @@ export function registerFileHandlers(): void {
           return { success: false, error: 'Invalid filename' };
         }
 
-        const filePath = join(ensoaiInputDir, safeName);
+        const filePath = join(baseDir, safeName);
 
         // Double-check resolved path stays within the allowed directory.
         const resolvedPath = resolve(filePath);
-        const allowedRoot = resolve(ensoaiInputDir) + sep;
+        const allowedRoot = resolve(baseDir) + sep;
         if (!resolvedPath.startsWith(allowedRoot)) {
           return { success: false, error: 'Invalid filename' };
         }

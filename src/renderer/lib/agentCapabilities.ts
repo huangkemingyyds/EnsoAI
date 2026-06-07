@@ -9,6 +9,8 @@ export interface ResolvedAgentCapabilities extends Omit<AgentCapabilities, 'enha
   enhancedInput: Required<EnhancedInputCapability> & {
     imageInput: NonNullable<EnhancedInputCapability['imageInput']>;
   };
+  completionDetection: NonNullable<AgentCapabilities['completionDetection']>;
+  sessionControl: NonNullable<AgentCapabilities['sessionControl']>;
   hasCompletionSignal: boolean;
 }
 
@@ -29,6 +31,15 @@ const DEFAULT_CAPABILITIES: ResolvedAgentCapabilities = {
   fileRead: true,
   fileWrite: true,
   enhancedInput: DEFAULT_ENHANCED_INPUT,
+  completionDetection: {
+    useWebSocket: false,
+    idleMs: 3000,
+    minRunningMs: 1000,
+  },
+  sessionControl: {
+    canReset: true,
+    autoCleanup: true,
+  },
   hasCompletionSignal: false,
 };
 
@@ -38,10 +49,25 @@ const BUILTIN_CAPABILITY_OVERRIDES: Record<string, Partial<ResolvedAgentCapabili
       ...DEFAULT_ENHANCED_INPUT,
       slashCommandCompletion: true,
     },
+    completionDetection: {
+      useWebSocket: true,
+    },
+    sessionControl: {
+      canReset: true,
+      autoCleanup: true,
+    },
     hasCompletionSignal: true,
   },
   codex: {
     enhancedInput: DEFAULT_ENHANCED_INPUT,
+    completionDetection: {
+      outputPattern: '(?m)^>\\s*$', // Standard Codex prompt
+      idleMs: 2000,
+    },
+    sessionControl: {
+      canReset: true,
+      autoCleanup: true,
+    },
   },
   gemini: {
     enhancedInput: {
@@ -51,10 +77,19 @@ const BUILTIN_CAPABILITY_OVERRIDES: Record<string, Partial<ResolvedAgentCapabili
         mode: 'prompt_with_arg',
       },
     },
+    completionDetection: {
+      outputPattern: '(?m)^>\\s*$', // Standard Gemini prompt
+      idleMs: 2000,
+    },
+    sessionControl: {
+      canReset: true,
+      autoCleanup: true,
+    },
   },
 };
 
 export function getBaseAgentId(agentId: string): string {
+  if (!agentId) return 'claude';
   return agentId.replace(/-(hapi|happy)$/, '');
 }
 
@@ -62,6 +97,7 @@ export function resolveAgentCapabilities(
   agentId: string,
   _options: ResolveAgentCapabilitiesOptions = {}
 ): ResolvedAgentCapabilities {
+  if (!agentId) return DEFAULT_CAPABILITIES;
   const baseAgentId = getBaseAgentId(agentId);
   const override = BUILTIN_CAPABILITY_OVERRIDES[baseAgentId] ?? {};
 
