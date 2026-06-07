@@ -81,14 +81,13 @@ describe('resolveAgentCapabilities', () => {
     ).toBe(true);
   });
 
-  it('renders Enhanced Input for supported Codex sessions when globally enabled and open', () => {
+  it('renders Enhanced Input for supported Codex sessions when globally enabled', () => {
     const capabilities = resolveAgentCapabilities('codex');
 
     expect(
       shouldRenderEnhancedInput({
         globalEnabled: true,
         capabilities,
-        open: true,
       })
     ).toBe(true);
   });
@@ -100,7 +99,6 @@ describe('resolveAgentCapabilities', () => {
       shouldRenderEnhancedInput({
         globalEnabled: false,
         capabilities,
-        open: true,
       })
     ).toBe(false);
   });

@@ -56,7 +56,7 @@ export interface ClaudeSlashCompletionItem {
   /** Optional description */
   description?: string;
   /** Data source */
-  source: 'builtin' | 'user' | 'learned';
+  source: 'builtin' | 'user' | 'learned' | 'enso';
 }
 
 export interface ClaudeSlashCompletionsSnapshot {

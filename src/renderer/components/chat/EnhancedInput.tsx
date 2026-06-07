@@ -1,5 +1,6 @@
-import type { ClaudeSlashCompletionItem, ClaudeSlashCompletionsSnapshot } from '@shared/types';
+import type { ClaudeSlashCompletionItem } from '@shared/types';
 import type { FileSearchResult } from '@shared/types/search';
+import { motion } from 'framer-motion';
 import { Paperclip, Send, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Dialog, DialogPopup } from '@/components/ui/dialog';
@@ -9,6 +10,7 @@ import { commandRegistry } from '@/lib/commandRegistry';
 import { isFocusLocked, lockFocus, unlockFocus } from '@/lib/focusLock';
 import { toLocalFileUrl } from '@/lib/localFileUrl';
 import { cn } from '@/lib/utils';
+import { useCompletionsStore } from '@/stores/completions';
 
 function getFileName(filePath: string): string {
   const sep = filePath.includes('\\') ? '\\' : '/';
@@ -77,47 +79,20 @@ export function EnhancedInput({
   const mentionListRef = useRef<HTMLDivElement>(null);
 
   // Slash command completions (indexed in main process from ~/.claude/commands and ~/.claude/skills)
-  const [slashItems, setSlashItems] = useState<ClaudeSlashCompletionItem[]>([]);
+  const slashItems = useCompletionsStore((state) => state.items);
+  const fetchCompletions = useCompletionsStore((state) => state.fetchCompletions);
+  const isCompletionsInitialized = useCompletionsStore((state) => state.isInitialized);
+
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
   const [slashResults, setSlashResults] = useState<ClaudeSlashCompletionItem[]>([]);
   const [slashIndex, setSlashIndex] = useState(0);
   const slashListRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    let alive = true;
-    // We already have slashCommandCompletionEnabled as a prop,
-    // which is derived from agentCapabilities in the Container.
-    if (!slashCommandCompletionEnabled) {
-      setSlashItems([]);
-      setSlashQuery(null);
-      setSlashResults([]);
-      return;
+    if (slashCommandCompletionEnabled && !isCompletionsInitialized) {
+      fetchCompletions();
     }
-
-    const api = window.electronAPI?.claudeCompletions;
-    if (!api) return;
-
-    api
-      .get()
-      .then((data: ClaudeSlashCompletionsSnapshot) => {
-        if (!alive) return;
-        setSlashItems(data.items ?? []);
-      })
-      .catch(() => {
-        if (!alive) return;
-        setSlashItems([]);
-      });
-
-    const cleanup = api.onUpdated((data: ClaudeSlashCompletionsSnapshot) => {
-      if (!alive) return;
-      setSlashItems(data.items ?? []);
-    });
-
-    return () => {
-      alive = false;
-      cleanup?.();
-    };
-  }, [slashCommandCompletionEnabled]);
+  }, [slashCommandCompletionEnabled, isCompletionsInitialized, fetchCompletions]);
 
   // Extract mention query from text before cursor
   const extractMentionQuery = useCallback((text: string, cursorPos: number): string | null => {
@@ -200,6 +175,7 @@ export function EnhancedInput({
     // Map local commands to completion items
     const localItems: ClaudeSlashCompletionItem[] = commandRegistry.getAllCommands().map((cmd) => ({
       label: `/${cmd.id}`,
+      insertText: `/${cmd.id} `,
       kind: 'command',
       description: cmd.metadata.description,
       source: 'enso', // Mark as local
@@ -774,12 +750,10 @@ export function EnhancedInput({
     fileInputRef.current?.click();
   }, []);
 
-  if (!open) return null;
-
   return (
-    <div className="relative">
+    <div className={cn('relative', !open && 'pointer-events-none')}>
       {/* @ mention file search popup — outside overflow-hidden container */}
-      {mentionQuery !== null && mentionResults.length > 0 && (
+      {open && mentionQuery !== null && mentionResults.length > 0 && (
         <div className="absolute bottom-full left-3 mb-1 w-72 rounded-lg border bg-popover shadow-lg z-10 overflow-hidden">
           <div ref={mentionListRef} className="max-h-[240px] overflow-y-auto py-1">
             {mentionResults.map((item, i) => {
@@ -835,7 +809,7 @@ export function EnhancedInput({
       )}
 
       {/* / slash command popup — outside overflow-hidden container */}
-      {slashQuery !== null && slashResults.length > 0 && (
+      {open && slashQuery !== null && slashResults.length > 0 && (
         <div className="absolute bottom-full left-3 mb-1 w-80 rounded-lg border bg-popover shadow-lg z-10 overflow-hidden">
           <div ref={slashListRef} className="max-h-[240px] overflow-y-auto py-1">
             {slashResults.map((item, i) => (
@@ -898,8 +872,14 @@ export function EnhancedInput({
         </div>
       )}
 
-      <div
+      <motion.div
         ref={containerRef}
+        initial={false}
+        animate={{
+          height: open ? 'auto' : 0,
+          opacity: open ? 1 : 0,
+        }}
+        transition={{ duration: 0.15, ease: 'easeOut' }}
         className="pointer-events-auto bg-background overflow-hidden border-t"
         onKeyDown={handlePanelKeyDown}
       >
@@ -1025,7 +1005,7 @@ export function EnhancedInput({
             )}
           </DialogPopup>
         </Dialog>
-      </div>
+      </motion.div>
     </div>
   );
 }

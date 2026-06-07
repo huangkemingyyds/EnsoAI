@@ -88,6 +88,7 @@ import { useI18n } from './i18n';
 import { useAgentSessionsStore } from './stores/agentSessions';
 import { initAgentTasksListener, useAgentTasksStore } from './stores/agentTasks';
 import { initCloneProgressListener } from './stores/cloneTasks';
+import { useCompletionsStore } from './stores/completions';
 import { useEditorStore } from './stores/editor';
 import { useInitScriptStore } from './stores/initScript';
 import { useSettingsStore } from './stores/settings';
@@ -109,6 +110,11 @@ export default function App() {
   // Initialize agent tasks listener for task list
   useEffect(() => {
     return initAgentTasksListener();
+  }, []);
+
+  // Prefetch slash command completions for enhanced input
+  useEffect(() => {
+    useCompletionsStore.getState().fetchCompletions();
   }, []);
 
   // Listen for auto-fetch completion events to refresh git status

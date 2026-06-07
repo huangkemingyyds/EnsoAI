@@ -51,11 +51,10 @@ export const EnhancedInputContainer = memo(function EnhancedInputContainer({
   const content = enhancedInputState?.content ?? '';
   const imagePaths = enhancedInputState?.imagePaths ?? [];
 
-  if (!open) return null;
-
   return (
     <EnhancedInput
-      open
+      sessionId={sessionId}
+      open={open}
       onOpenChange={(newOpen) => {
         if (!newOpen) {
           setEnhancedInputOpen(sessionId, false);
@@ -66,7 +65,6 @@ export const EnhancedInputContainer = memo(function EnhancedInputContainer({
         onSend(sendContent, sendImagePaths);
         clearEnhancedInput(sessionId, keepOpenAfterSend);
       }}
-      sessionId={sessionId}
       content={content}
       imagePaths={imagePaths}
       onContentChange={(newContent) => setEnhancedInputContent(sessionId, newContent)}

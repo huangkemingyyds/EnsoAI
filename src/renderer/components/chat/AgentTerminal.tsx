@@ -106,6 +106,11 @@ export function AgentTerminal({
   const resumeSessionId = sessionId ?? id;
   const { t } = useI18n();
 
+  // Subscribe to enhanced input open state directly from store to ensure latest value in callbacks
+  const storeEnhancedInputOpen = useAgentSessionsStore(
+    (s) => s.enhancedInputStates[terminalSessionId || '']?.open
+  );
+
   // Find the session object to get error status
   const currentSession = useAgentSessionsStore((s) =>
     terminalSessionId ? s.sessions.find((sess) => sess.id === terminalSessionId) : undefined
@@ -194,16 +199,23 @@ export function AgentTerminal({
   const isExternallyControlled = externalEnhancedInputOpen !== undefined;
   const enhancedInputOpen = isExternallyControlled
     ? externalEnhancedInputOpen
-    : localEnhancedInputOpen;
+    : storeEnhancedInputOpen !== undefined
+      ? storeEnhancedInputOpen
+      : localEnhancedInputOpen;
   const setEnhancedInputOpen = useCallback(
     (open: boolean) => {
       if (isExternallyControlled) {
         onEnhancedInputOpenChange?.(open);
         return;
       }
-      setLocalEnhancedInputOpen(open);
+      if (terminalSessionId) {
+        // Update store directly if we have a session ID
+        useAgentSessionsStore.getState().setEnhancedInputOpen(terminalSessionId, open);
+      } else {
+        setLocalEnhancedInputOpen(open);
+      }
     },
-    [isExternallyControlled, onEnhancedInputOpenChange]
+    [isExternallyControlled, onEnhancedInputOpenChange, terminalSessionId]
   );
 
   // Keep isActiveRef in sync with isActive prop
@@ -1072,7 +1084,7 @@ export function AgentTerminal({
         write(message);
       }
 
-      const delay = imagePaths.length > 0 ? 800 : hasInternalNewlines ? 300 : 30;
+      const delay = imagePaths.length > 0 ? 300 : hasInternalNewlines ? 100 : 10;
       setTimeout(() => write('\r'), delay);
 
       terminal?.focus();

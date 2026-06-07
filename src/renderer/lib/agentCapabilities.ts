@@ -118,13 +118,11 @@ export function getEnhancedInputShortcutAction({
 export function shouldRenderEnhancedInput({
   globalEnabled,
   capabilities,
-  open,
 }: {
   globalEnabled: boolean;
   capabilities: Pick<ResolvedAgentCapabilities, 'enhancedInput'>;
-  open: boolean;
 }): boolean {
-  return open && shouldHandleEnhancedInputShortcut({ globalEnabled, capabilities });
+  return shouldHandleEnhancedInputShortcut({ globalEnabled, capabilities });
 }
 
 export function shouldUseSlashCommandCompletion({

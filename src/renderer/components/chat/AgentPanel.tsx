@@ -319,7 +319,7 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
 
   // Enhanced input state actions from store
   const setEnhancedInputOpen = useAgentSessionsStore((state) => state.setEnhancedInputOpen);
-  const getEnhancedInputState = useAgentSessionsStore((state) => state.getEnhancedInputState);
+  const _getEnhancedInputState = useAgentSessionsStore((state) => state.getEnhancedInputState);
 
   // Group states from store (persists across component remounts)
   const worktreeGroupStates = useAgentSessionsStore((state) => state.groupStates);
@@ -1930,11 +1930,6 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
                 onResetSession={() => handleResetSession(sessionId, groupId || undefined)}
                 onNewSession={() => handleNewSession(groupId || undefined)}
                 onAgentCompletionSignal={handleAgentCompletionSignal}
-                enhancedInputOpen={getEnhancedInputState(sessionId).open}
-                onEnhancedInputOpenChange={(open) => {
-                  // EnhancedInput open state is now stored per-session in the store
-                  setEnhancedInputOpen(sessionId, open);
-                }}
                 onRegisterEnhancedInputSender={(senderSessionId, sender) => {
                   enhancedInputSenderRef.current.set(senderSessionId, sender);
                 }}
@@ -1964,16 +1959,12 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
         const activeCapabilities = activeSession?.agentId
           ? resolveAgentCapabilities(activeSession.agentId, { customAgents, agentSettings })
           : null;
-        const enhancedInputOpen = group.activeSessionId
-          ? getEnhancedInputState(group.activeSessionId).open
-          : false;
         const renderEnhancedInput =
           group.activeSessionId != null &&
           activeCapabilities != null &&
           shouldRenderEnhancedInput({
             globalEnabled: agentInput.enabled,
             capabilities: activeCapabilities,
-            open: enhancedInputOpen,
           });
 
         return (
