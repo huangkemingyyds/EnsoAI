@@ -1,6 +1,6 @@
 {
   "name": "enso-ai-keming",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "EnsoAI personalized build for Keming",
   "main": "./out/main/index.js",
   "author": {
