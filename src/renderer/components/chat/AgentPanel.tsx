@@ -213,6 +213,7 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
     hapiSettings,
     autoCreateSessionOnActivate,
     autoCreateSessionOnTempActivate,
+    agentInput,
     claudeCodeIntegration,
     terminalTheme,
   } = useSettingsStore();
@@ -646,10 +647,10 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
         customAgents,
         agentSettings,
       });
-      const autoPopupMode = claudeCodeIntegration.enhancedInputAutoPopup;
+      const autoPopupMode = agentInput.autoPopupMode;
       if (
         shouldAutoOpenEnhancedInput({
-          globalEnabled: claudeCodeIntegration.enhancedInputEnabled,
+          globalEnabled: agentInput.enabled,
           capabilities,
           autoPopupMode,
           hasCompletionSignal: autoPopupMode === 'always',
@@ -697,8 +698,8 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
       agentSettings,
       addSession,
       updateCurrentGroupState,
-      claudeCodeIntegration.enhancedInputEnabled,
-      claudeCodeIntegration.enhancedInputAutoPopup,
+      agentInput.enabled,
+      agentInput.autoPopupMode,
       setEnhancedInputOpen,
     ]
   );
@@ -841,19 +842,19 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
         // 2. enhancedInputAutoPopup is 'always' or 'hideWhileRunning'
         // 3. Agent Completion Signal (Claude Stop Hook in this listener)
         // 4. NOT in 'waiting_input' state (AskUserQuestion or Permission Prompt active)
-        const autoPopupMode = claudeCodeIntegration.enhancedInputAutoPopup;
+        const autoPopupMode = agentInput.autoPopupMode;
         const activityState = getActivityState(session.cwd);
         const capabilities = resolveAgentCapabilities(session.agentId, {
           customAgents,
           agentSettings,
         });
-        const hasClaudeCompletionSignal = session.agentCommand.startsWith('claude');
+        const hasCompletionSignal = capabilities.hasCompletionSignal;
         const shouldAutoPopup =
           shouldAutoOpenEnhancedInput({
-            globalEnabled: claudeCodeIntegration.enhancedInputEnabled,
+            globalEnabled: agentInput.enabled,
             capabilities,
             autoPopupMode,
-            hasCompletionSignal: hasClaudeCompletionSignal,
+            hasCompletionSignal,
           }) &&
           claudeCodeIntegration.stopHookEnabled &&
           activityState !== 'waiting_input';
@@ -890,6 +891,7 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
     setEnhancedInputOpen,
     customAgents,
     agentSettings,
+    agentInput,
   ]);
 
   // Note: EnhancedInput open state is now stored per-session in the store
@@ -1064,10 +1066,10 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
 
       // Auto open enhanced input for agents that support it.
       const capabilities = resolveAgentCapabilities(agentId, { customAgents, agentSettings });
-      const autoPopupMode = claudeCodeIntegration.enhancedInputAutoPopup;
+      const autoPopupMode = agentInput.autoPopupMode;
       if (
         shouldAutoOpenEnhancedInput({
-          globalEnabled: claudeCodeIntegration.enhancedInputEnabled,
+          globalEnabled: agentInput.enabled,
           capabilities,
           autoPopupMode,
           hasCompletionSignal: autoPopupMode === 'always',
@@ -1113,8 +1115,8 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
       agentSettings,
       addSession,
       updateCurrentGroupState,
-      claudeCodeIntegration.enhancedInputEnabled,
-      claudeCodeIntegration.enhancedInputAutoPopup,
+      agentInput.enabled,
+      agentInput.autoPopupMode,
       setEnhancedInputOpen,
     ]
   );
@@ -1793,7 +1795,7 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
           group.activeSessionId != null &&
           activeCapabilities != null &&
           shouldRenderEnhancedInput({
-            globalEnabled: claudeCodeIntegration.enhancedInputEnabled,
+            globalEnabled: agentInput.enabled,
             capabilities: activeCapabilities,
             open: enhancedInputOpen,
           });

@@ -32,13 +32,33 @@ describe('formatEnhancedInputForAgent', () => {
     expect(message).toBe('Use this image\n\nimage.png');
   });
 
-  it('falls back from Gemini prompt-with-arg image mode to appended prompt paths', () => {
+  it('formats Gemini images using prompt-with-arg mode', () => {
     const message = formatEnhancedInputForAgent({
       capabilities: resolveAgentCapabilities('gemini'),
       content: 'Describe this',
       imagePaths: ['gemini image.png'],
     });
 
-    expect(message).toBe('Describe this\n\n"gemini image.png"');
+    expect(message).toBe('--image "gemini image.png" "Describe this"');
+  });
+
+  it('formats Gemini with multiple images using prompt-with-arg mode', () => {
+    const message = formatEnhancedInputForAgent({
+      capabilities: resolveAgentCapabilities('gemini'),
+      content: 'Compare these',
+      imagePaths: ['img1.png', 'img2.png'],
+    });
+
+    expect(message).toBe('--image img1.png --image img2.png "Compare these"');
+  });
+
+  it('formats Gemini images without text content using prompt-with-arg mode', () => {
+    const message = formatEnhancedInputForAgent({
+      capabilities: resolveAgentCapabilities('gemini'),
+      content: '',
+      imagePaths: ['img1.png'],
+    });
+
+    expect(message).toBe('--image img1.png');
   });
 });

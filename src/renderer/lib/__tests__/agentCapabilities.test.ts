@@ -15,11 +15,19 @@ describe('resolveAgentCapabilities', () => {
     expect(capabilities.enhancedInput.supported).toBe(true);
   });
 
-  it('resolves Claude as supporting Enhanced Input with slash command completion', () => {
+  it('resolves Claude as supporting Enhanced Input with slash command completion and completion signal', () => {
     const capabilities = resolveAgentCapabilities('claude');
 
     expect(capabilities.enhancedInput.supported).toBe(true);
     expect(capabilities.enhancedInput.slashCommandCompletion).toBe(true);
+    expect(capabilities.hasCompletionSignal).toBe(true);
+  });
+
+  it('resolves Codex as supporting Enhanced Input but without completion signal', () => {
+    const capabilities = resolveAgentCapabilities('codex');
+
+    expect(capabilities.enhancedInput.supported).toBe(true);
+    expect(capabilities.hasCompletionSignal).toBe(false);
   });
 
   it('resolves Gemini with prompt-with-arg image input mode', () => {

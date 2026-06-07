@@ -191,6 +191,12 @@ export interface StatusLineFieldSettings {
   version: boolean; // Claude version
 }
 
+// Agent input settings
+export interface AgentInputSettings {
+  enabled: boolean;
+  autoPopupMode: 'always' | 'hideWhileRunning' | 'manual';
+}
+
 // Claude Code integration settings
 export interface ClaudeCodeIntegrationSettings {
   enabled: boolean;
@@ -205,8 +211,8 @@ export interface ClaudeCodeIntegrationSettings {
   enableProviderWatcher: boolean; // Enable watcher for Claude Code settings.json changes
   enableProviderDisableFeature: boolean; // Enable/disable the provider temporary disable feature
   providers: import('@shared/types').ClaudeProvider[];
-  enhancedInputEnabled: boolean; // Enable Enhanced Input panel for Agent Sessions
-  enhancedInputAutoPopup: 'always' | 'hideWhileRunning' | 'manual'; // Enhanced input auto popup mode
+  enhancedInputEnabled?: boolean; // Legacy
+  enhancedInputAutoPopup?: 'always' | 'hideWhileRunning' | 'manual'; // Legacy
 }
 
 // Commit message generator settings
@@ -331,6 +337,9 @@ export interface SettingsState {
   agentNotificationDelay: number; // in seconds
   agentNotificationEnterDelay: number; // delay after Enter before starting idle timer
 
+  // Agent Input (Generalized Enhanced Input)
+  agentInput: AgentInputSettings;
+
   // Claude Code Integration
   claudeCodeIntegration: ClaudeCodeIntegrationSettings;
 
@@ -454,6 +463,9 @@ export interface SettingsState {
   setAgentNotificationEnabled: (enabled: boolean) => void;
   setAgentNotificationDelay: (delay: number) => void;
   setAgentNotificationEnterDelay: (delay: number) => void;
+
+  // Setters - Agent Input
+  setAgentInput: (settings: Partial<AgentInputSettings>) => void;
 
   // Setters - Claude Code Integration
   setClaudeCodeIntegration: (settings: Partial<ClaudeCodeIntegrationSettings>) => void;

@@ -10,6 +10,7 @@ import {
 } from '@/lib/ghosttyTheme';
 import { updateRendererLogging } from '@/utils/logging';
 import {
+  defaultAgentInputSettings,
   defaultAgentSettings,
   defaultAiPerformanceSettings,
   defaultBranchNameGeneratorSettings,
@@ -138,6 +139,9 @@ function getInitialState() {
     agentNotificationEnabled: true,
     agentNotificationDelay: 5,
     agentNotificationEnterDelay: 5,
+
+    // Agent Input (Generalized Enhanced Input)
+    agentInput: defaultAgentInputSettings,
 
     // Claude Code Integration
     claudeCodeIntegration: defaultClaudeCodeIntegrationSettings,
@@ -386,6 +390,12 @@ export const useSettingsStore = create<SettingsState>()(
       setAgentNotificationDelay: (agentNotificationDelay) => set({ agentNotificationDelay }),
       setAgentNotificationEnterDelay: (agentNotificationEnterDelay) =>
         set({ agentNotificationEnterDelay }),
+
+      // Agent Input Setters
+      setAgentInput: (settings) =>
+        set((state) => ({
+          agentInput: { ...state.agentInput, ...settings },
+        })),
 
       // Claude Code Integration Setters
       setClaudeCodeIntegration: (settings) =>

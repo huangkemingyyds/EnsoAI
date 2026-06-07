@@ -98,6 +98,7 @@ export function AgentTerminal({
     agentNotificationEnterDelay,
     hapiSettings,
     shellConfig,
+    agentInput,
     claudeCodeIntegration,
     glowEffectEnabled,
   } = useSettingsStore();
@@ -113,11 +114,11 @@ export function AgentTerminal({
 
   const agentCapabilities = useMemo(() => resolveAgentCapabilities(agentId), [agentId]);
   const enhancedInputShortcutAction = getEnhancedInputShortcutAction({
-    globalEnabled: claudeCodeIntegration.enhancedInputEnabled,
+    globalEnabled: agentInput.enabled,
     capabilities: agentCapabilities,
   });
   const enhancedInputShortcutEnabled = shouldHandleEnhancedInputShortcut({
-    globalEnabled: claudeCodeIntegration.enhancedInputEnabled,
+    globalEnabled: agentInput.enabled,
     capabilities: agentCapabilities,
   });
 
@@ -199,7 +200,7 @@ export function AgentTerminal({
       if (
         newState === 'outputting' &&
         enhancedInputShortcutEnabled &&
-        claudeCodeIntegration.enhancedInputAutoPopup === 'hideWhileRunning'
+        agentInput.autoPopupMode === 'hideWhileRunning'
       ) {
         onEnhancedInputOpenChange?.(false);
       }
@@ -208,7 +209,7 @@ export function AgentTerminal({
       terminalSessionId,
       setOutputState,
       enhancedInputShortcutEnabled,
-      claudeCodeIntegration.enhancedInputAutoPopup,
+      agentInput.autoPopupMode,
       onEnhancedInputOpenChange,
     ]
   );

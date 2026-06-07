@@ -120,6 +120,9 @@ export function migrateSettings(
   // Migrate Claude Code integration settings
   const migratedClaudeCodeIntegration = migrateClaudeCodeIntegration(persisted, currentState);
 
+  // Migrate Agent Input settings
+  const migratedAgentInput = migrateAgentInput(persisted, currentState);
+
   // Filter agent detection status to only include enabled agents
   const migratedAgentDetectionStatus = Object.fromEntries(
     Object.entries({
@@ -178,6 +181,7 @@ export function migrateSettings(
       ...persisted.editorSettings,
     },
     claudeCodeIntegration: migratedClaudeCodeIntegration,
+    agentInput: migratedAgentInput,
     commitMessageGenerator: {
       ...currentState.commitMessageGenerator,
       ...persisted.commitMessageGenerator,
@@ -304,6 +308,44 @@ function migrateClaudeCodeIntegration(
   // Fix inconsistent state: hideWhileRunning requires stopHookEnabled
   if (merged.enhancedInputAutoPopup === 'hideWhileRunning' && !merged.stopHookEnabled) {
     merged.enhancedInputAutoPopup = 'always';
+  }
+
+  return merged;
+}
+
+/**
+ * Migrate Agent Input settings
+ */
+function migrateAgentInput(
+  persisted: Partial<SettingsState>,
+  currentState: SettingsState
+): SettingsState['agentInput'] {
+  // If agentInput already exists in persisted state, use it
+  if (persisted.agentInput) {
+    return {
+      ...currentState.agentInput,
+      ...persisted.agentInput,
+    };
+  }
+
+  // Otherwise, migrate from legacy Claude integration fields
+  const legacyEnabled = persisted.claudeCodeIntegration?.enhancedInputEnabled;
+  const legacyAutoPopup = persisted.claudeCodeIntegration?.enhancedInputAutoPopup;
+
+  const merged = {
+    ...currentState.agentInput,
+  };
+
+  if (legacyEnabled !== undefined) {
+    merged.enabled = legacyEnabled;
+  }
+
+  if (legacyAutoPopup !== undefined) {
+    if (typeof legacyAutoPopup === 'boolean') {
+      merged.autoPopupMode = legacyAutoPopup ? 'hideWhileRunning' : 'manual';
+    } else {
+      merged.autoPopupMode = legacyAutoPopup;
+    }
   }
 
   return merged;

@@ -5,6 +5,8 @@ export interface EnhancedInputCapability {
   imageInput?: {
     supported: boolean;
     mode: EnhancedInputImageMode;
+    /** Template for injecting image paths into a running session, e.g. "/image %path%" */
+    injectionTemplate?: string;
   };
   multiline?: boolean;
   slashCommandCompletion?: boolean;
@@ -17,6 +19,8 @@ export interface AgentCapabilities {
   fileRead: boolean;
   fileWrite: boolean;
   enhancedInput?: EnhancedInputCapability;
+  /** Whether the agent provides a reliable completion signal (e.g. Stop Hook) */
+  hasCompletionSignal?: boolean;
 }
 
 export interface AgentMetadata {

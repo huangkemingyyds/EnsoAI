@@ -2,6 +2,7 @@ import { normalizeLocale } from '@shared/i18n';
 import type { ProxySettings } from '@shared/types';
 import type {
   AgentDetectionStatus,
+  AgentInputSettings,
   AgentSettings,
   AIPerformanceSettings,
   BranchNameGeneratorSettings,
@@ -147,6 +148,12 @@ export const defaultStatusLineFieldSettings: StatusLineFieldSettings = {
   version: false,
 };
 
+// Default Agent input settings
+export const defaultAgentInputSettings: AgentInputSettings = {
+  enabled: false,
+  autoPopupMode: 'hideWhileRunning',
+};
+
 // Default Claude Code integration settings
 export const defaultClaudeCodeIntegrationSettings: ClaudeCodeIntegrationSettings = {
   enabled: true,
@@ -161,8 +168,8 @@ export const defaultClaudeCodeIntegrationSettings: ClaudeCodeIntegrationSettings
   enableProviderWatcher: true, // Enable provider watcher by default
   enableProviderDisableFeature: false,
   providers: [],
-  enhancedInputEnabled: false, // Disable enhanced input by default
-  enhancedInputAutoPopup: 'hideWhileRunning', // Hide while running by default
+  enhancedInputEnabled: false, // Legacy field (migrating to agentInput)
+  enhancedInputAutoPopup: 'hideWhileRunning', // Legacy field (migrating to agentInput)
 };
 
 // Default commit message generator settings

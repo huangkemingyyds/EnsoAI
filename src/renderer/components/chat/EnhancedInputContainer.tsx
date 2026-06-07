@@ -30,9 +30,7 @@ export const EnhancedInputContainer = memo(function EnhancedInputContainer({
   const clearEnhancedInput = useAgentSessionsStore((state) => state.clearEnhancedInput);
 
   // Get enhanced input mode setting
-  const enhancedInputAutoPopup = useSettingsStore(
-    (state) => state.claudeCodeIntegration.enhancedInputAutoPopup
-  );
+  const enhancedInputAutoPopup = useSettingsStore((state) => state.agentInput.autoPopupMode);
   const keepOpenAfterSend = enhancedInputAutoPopup === 'always';
 
   // Get cwd from session for file mention search

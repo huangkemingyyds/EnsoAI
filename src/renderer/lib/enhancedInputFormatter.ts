@@ -16,12 +16,27 @@ export function formatEnhancedInputForAgent({
   imagePaths,
 }: FormatEnhancedInputOptions): string {
   const trimmedContent = content.trim();
-  if (!capabilities.enhancedInput.imageInput.supported || imagePaths.length === 0) {
+  const { supported, mode } = capabilities.enhancedInput.imageInput;
+
+  if (!supported || imagePaths.length === 0) {
     return trimmedContent;
   }
 
-  const formattedPaths = imagePaths.map(quotePathIfNeeded).join(' ');
-  if (!trimmedContent) return formattedPaths;
+  // Handle different image input modes
+  switch (mode) {
+    case 'prompt_with_arg': {
+      // Format: --image path1 --image path2 "text"
+      const args = imagePaths.map((p) => `--image ${quotePathIfNeeded(p)}`).join(' ');
+      if (!trimmedContent) return args;
+      return `${args} ${JSON.stringify(trimmedContent)}`;
+    }
 
-  return `${trimmedContent}\n\n${formattedPaths}`;
+    default: {
+      // Format: text\n\npath1 path2
+      // Note: cli_arg is not supported in already running sessions, fall back to append_to_prompt
+      const formattedPaths = imagePaths.map(quotePathIfNeeded).join(' ');
+      if (!trimmedContent) return formattedPaths;
+      return `${trimmedContent}\n\n${formattedPaths}`;
+    }
+  }
 }

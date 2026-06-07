@@ -33,7 +33,8 @@ interface IntegrationSettingsProps {
 export function IntegrationSettings({ scrollToProvider }: IntegrationSettingsProps) {
   const { t } = useI18n();
   const providerRef = React.useRef<HTMLDivElement>(null);
-  const { claudeCodeIntegration, setClaudeCodeIntegration } = useSettingsStore();
+  const { agentInput, setAgentInput, claudeCodeIntegration, setClaudeCodeIntegration } =
+    useSettingsStore();
   const [bridgePort, setBridgePort] = React.useState<number | null>(null);
   const [showDependencyDialog, setShowDependencyDialog] = React.useState(false);
   const [tmuxError, setTmuxError] = React.useState<string | null>(null);
@@ -78,6 +79,86 @@ export function IntegrationSettings({ scrollToProvider }: IntegrationSettingsPro
   return (
     <div className="space-y-6">
       <div>
+        <h3 className="text-lg font-medium">{t('Agent Input')}</h3>
+        <p className="text-sm text-muted-foreground">
+          {t('General settings for the Enhanced Input panel used across all agents')}
+        </p>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <div className="space-y-0.5">
+          <span className="text-sm font-medium">{t('Enhanced Input')}</span>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              'Enable the Agent input panel for supported Agent Sessions (Claude, Codex, Gemini, etc.)'
+            )}
+          </p>
+        </div>
+        <Switch
+          checked={agentInput.enabled}
+          onCheckedChange={(checked) => setAgentInput({ enabled: checked })}
+        />
+      </div>
+
+      {agentInput.enabled && (
+        <div className="ml-4 space-y-2 border-l-2 border-muted pl-4">
+          <span className="text-xs font-medium text-muted-foreground">{t('Display Mode')}</span>
+          <div className="space-y-1">
+            <label className="flex items-start gap-2 rounded-md p-2 hover:bg-muted/50 cursor-pointer">
+              <input
+                type="radio"
+                name="enhancedInputAutoPopup"
+                checked={agentInput.autoPopupMode === 'manual'}
+                onChange={() => setAgentInput({ autoPopupMode: 'manual' })}
+                className="h-4 w-4 mt-0.5 shrink-0"
+              />
+              <div className="space-y-0.5">
+                <span className="text-sm font-medium">{t('Manual')}</span>
+                <p className="text-xs text-muted-foreground">
+                  {t('Only open supported Agent Sessions via Ctrl+G, Esc to close')}
+                </p>
+              </div>
+            </label>
+            <label className="flex items-start gap-2 rounded-md p-2 hover:bg-muted/50 cursor-pointer">
+              <input
+                type="radio"
+                name="enhancedInputAutoPopup"
+                checked={agentInput.autoPopupMode === 'always'}
+                onChange={() => setAgentInput({ autoPopupMode: 'always' })}
+                className="h-4 w-4 mt-0.5 shrink-0"
+              />
+              <div className="space-y-0.5">
+                <span className="text-sm font-medium">{t('Always Show')}</span>
+                <p className="text-xs text-muted-foreground">
+                  {t('Panel stays visible for supported Agent Sessions after sending')}
+                </p>
+              </div>
+            </label>
+            <label
+              className={`flex items-start gap-2 rounded-md p-2 ${!claudeCodeIntegration.stopHookEnabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted/50 cursor-pointer'}`}
+            >
+              <input
+                type="radio"
+                name="enhancedInputAutoPopup"
+                checked={agentInput.autoPopupMode === 'hideWhileRunning'}
+                onChange={() => setAgentInput({ autoPopupMode: 'hideWhileRunning' })}
+                disabled={!claudeCodeIntegration.stopHookEnabled}
+                className="h-4 w-4 mt-0.5 shrink-0"
+              />
+              <div className="space-y-0.5">
+                <span className="text-sm font-medium">{t('Hide While Running')}</span>
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    'Auto-hide while running; completion auto-popup requires an Agent completion signal (e.g. Claude)'
+                  )}
+                </p>
+              </div>
+            </label>
+          </div>
+        </div>
+      )}
+
+      <div className="pt-4 border-t">
         <h3 className="text-lg font-medium">{t('Claude Code Integration')}</h3>
         <p className="text-sm text-muted-foreground">
           {t('Connect to Claude Code CLI for enhanced IDE features')}
@@ -149,10 +230,7 @@ export function IntegrationSettings({ scrollToProvider }: IntegrationSettingsPro
             <Switch
               checked={claudeCodeIntegration.stopHookEnabled}
               onCheckedChange={(checked) => {
-                if (
-                  !checked &&
-                  claudeCodeIntegration.enhancedInputAutoPopup === 'hideWhileRunning'
-                ) {
+                if (!checked && agentInput.autoPopupMode === 'hideWhileRunning') {
                   // Show dependency dialog when disabling and hideWhileRunning is selected
                   setShowDependencyDialog(true);
                 } else {
@@ -181,7 +259,9 @@ export function IntegrationSettings({ scrollToProvider }: IntegrationSettingsPro
                       onClick={() => {
                         setClaudeCodeIntegration({
                           stopHookEnabled: false,
-                          enhancedInputAutoPopup: 'always',
+                        });
+                        setAgentInput({
+                          autoPopupMode: 'always',
                         });
                         setShowDependencyDialog(false);
                       }}
@@ -209,85 +289,6 @@ export function IntegrationSettings({ scrollToProvider }: IntegrationSettingsPro
               }
             />
           </div>
-
-          {/* Enhanced Input */}
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <span className="text-sm font-medium">{t('Enhanced Input')}</span>
-              <p className="text-xs text-muted-foreground">
-                {t('Enable the Agent input panel with multi-line editing and attachments')}
-              </p>
-            </div>
-            <Switch
-              checked={claudeCodeIntegration.enhancedInputEnabled ?? true}
-              onCheckedChange={(checked) =>
-                setClaudeCodeIntegration({ enhancedInputEnabled: checked })
-              }
-            />
-          </div>
-
-          {claudeCodeIntegration.enhancedInputEnabled && (
-            <div className="ml-4 space-y-2 border-l-2 border-muted pl-4">
-              <span className="text-xs font-medium text-muted-foreground">{t('Display Mode')}</span>
-              <div className="space-y-1">
-                <label className="flex items-start gap-2 rounded-md p-2 hover:bg-muted/50 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="enhancedInputAutoPopup"
-                    checked={claudeCodeIntegration.enhancedInputAutoPopup === 'manual'}
-                    onChange={() => setClaudeCodeIntegration({ enhancedInputAutoPopup: 'manual' })}
-                    className="h-4 w-4 mt-0.5 shrink-0"
-                  />
-                  <div className="space-y-0.5">
-                    <span className="text-sm font-medium">{t('Manual')}</span>
-                    <p className="text-xs text-muted-foreground">
-                      {t('Only open supported Agent Sessions via Ctrl+G, Esc to close')}
-                    </p>
-                  </div>
-                </label>
-                <label className="flex items-start gap-2 rounded-md p-2 hover:bg-muted/50 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="enhancedInputAutoPopup"
-                    checked={claudeCodeIntegration.enhancedInputAutoPopup === 'always'}
-                    onChange={() => setClaudeCodeIntegration({ enhancedInputAutoPopup: 'always' })}
-                    className="h-4 w-4 mt-0.5 shrink-0"
-                  />
-                  <div className="space-y-0.5">
-                    <span className="text-sm font-medium">{t('Always Show')}</span>
-                    <p className="text-xs text-muted-foreground">
-                      {t('Panel stays visible for supported Agent Sessions after sending')}
-                    </p>
-                  </div>
-                </label>
-                <label
-                  className={`flex items-start gap-2 rounded-md p-2 ${!claudeCodeIntegration.stopHookEnabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted/50 cursor-pointer'}`}
-                >
-                  <input
-                    type="radio"
-                    name="enhancedInputAutoPopup"
-                    checked={
-                      (claudeCodeIntegration.enhancedInputAutoPopup ?? 'hideWhileRunning') ===
-                      'hideWhileRunning'
-                    }
-                    onChange={() =>
-                      setClaudeCodeIntegration({ enhancedInputAutoPopup: 'hideWhileRunning' })
-                    }
-                    disabled={!claudeCodeIntegration.stopHookEnabled}
-                    className="h-4 w-4 mt-0.5 shrink-0"
-                  />
-                  <div className="space-y-0.5">
-                    <span className="text-sm font-medium">{t('Hide While Running')}</span>
-                    <p className="text-xs text-muted-foreground">
-                      {t(
-                        'Auto-hide while running; completion auto-popup requires an Agent completion signal'
-                      )}
-                    </p>
-                  </div>
-                </label>
-              </div>
-            </div>
-          )}
 
           {/* Status Line */}
           <div className="flex items-center justify-between">

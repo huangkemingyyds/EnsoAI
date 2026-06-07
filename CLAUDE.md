@@ -4,7 +4,7 @@
 
 ### Issue tracker
 
-Issues and PRDs are tracked in GitHub Issues for `J3n5en/EnsoAI`. See `docs/agents/issue-tracker.md`.
+Issues and PRDs are tracked in GitHub Issues for `huangkemingyyds/EnsoAI`. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

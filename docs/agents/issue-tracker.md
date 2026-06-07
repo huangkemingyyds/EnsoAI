@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-Issues and PRDs for this repo live as GitHub issues in `J3n5en/EnsoAI`.
+Issues and PRDs for this repo live as GitHub issues in `huangkemingyyds/EnsoAI`.
 
 ## Conventions
 
@@ -11,7 +11,7 @@ Issues and PRDs for this repo live as GitHub issues in `J3n5en/EnsoAI`.
 
 ## When a skill says "publish to the issue tracker"
 
-Create a GitHub issue in `J3n5en/EnsoAI`.
+Create a GitHub issue in `huangkemingyyds/EnsoAI`.
 
 ## When a skill says "fetch the relevant ticket"
 

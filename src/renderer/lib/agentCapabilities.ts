@@ -9,6 +9,7 @@ export interface ResolvedAgentCapabilities extends Omit<AgentCapabilities, 'enha
   enhancedInput: Required<EnhancedInputCapability> & {
     imageInput: NonNullable<EnhancedInputCapability['imageInput']>;
   };
+  hasCompletionSignal: boolean;
 }
 
 const DEFAULT_ENHANCED_INPUT: ResolvedAgentCapabilities['enhancedInput'] = {
@@ -28,6 +29,7 @@ const DEFAULT_CAPABILITIES: ResolvedAgentCapabilities = {
   fileRead: true,
   fileWrite: true,
   enhancedInput: DEFAULT_ENHANCED_INPUT,
+  hasCompletionSignal: false,
 };
 
 const BUILTIN_CAPABILITY_OVERRIDES: Record<string, Partial<ResolvedAgentCapabilities>> = {
@@ -36,6 +38,7 @@ const BUILTIN_CAPABILITY_OVERRIDES: Record<string, Partial<ResolvedAgentCapabili
       ...DEFAULT_ENHANCED_INPUT,
       slashCommandCompletion: true,
     },
+    hasCompletionSignal: true,
   },
   codex: {
     enhancedInput: DEFAULT_ENHANCED_INPUT,
