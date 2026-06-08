@@ -151,7 +151,7 @@ export const defaultStatusLineFieldSettings: StatusLineFieldSettings = {
 // Default Agent input settings
 export const defaultAgentInputSettings: AgentInputSettings = {
   enabled: false,
-  autoPopupMode: 'hideWhileRunning',
+  autoPopupMode: 'manual',
 };
 
 // Default Claude Code integration settings
@@ -169,7 +169,7 @@ export const defaultClaudeCodeIntegrationSettings: ClaudeCodeIntegrationSettings
   enableProviderDisableFeature: false,
   providers: [],
   enhancedInputEnabled: false, // Legacy field (migrating to agentInput)
-  enhancedInputAutoPopup: 'hideWhileRunning', // Legacy field (migrating to agentInput)
+  enhancedInputAutoPopup: 'manual', // Legacy field (migrating to agentInput)
 };
 
 // Default commit message generator settings

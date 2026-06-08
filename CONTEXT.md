@@ -36,6 +36,26 @@ _Avoid_: Terminal, provider, worktree
 The reusable prompt composition surface for an Agent Session, supporting richer input such as multiline text and attachments when the Agent supports them.
 _Avoid_: Claude input, chat box, terminal input
 
+**Enhanced Input Draft**:
+Unsent Enhanced Input content and Input Attachments kept for an Agent Session until the user sends, clears, or closes that session.
+_Avoid_: Component state, textarea value, prompt history
+
+**Enhanced Input Entry Point**:
+A user-facing control that opens Enhanced Input for an Agent Session without requiring a keyboard shortcut.
+_Avoid_: Shortcut, status line, tab action
+
+**Enhanced Input Submission**:
+An attempt to send an Enhanced Input Draft to an Agent Session or a local command handled by the Chat Workspace.
+_Avoid_: PTY write, button click, form submit
+
+**Enhanced Input Visibility**:
+The user-facing presence of Enhanced Input for an Agent Session, independent of whether the Agent supports Enhanced Input.
+_Avoid_: Mounted state, auto-popup mode, always-on input
+
+**First Prompt Composer**:
+The prompt composition surface shown before an Agent Session exists, used to launch a new Agent Session with initial content.
+_Avoid_: Enhanced Input Visibility, session input, empty state
+
 **Input Attachment**:
 A file supplied alongside Enhanced Input content as context for an Agent Session.
 _Avoid_: Upload, CLI argument, embedded file

@@ -400,15 +400,22 @@ async function startWatchers(): Promise<void> {
 
   for (const dir of watchTargets) {
     try {
-      const sub = await subscribe(dir, (err, events) => {
-        if (err) {
-          console.warn('[ClaudeCompletions] watcher 错误：', err);
-          return;
+      const sub = await subscribe(
+        dir,
+        (err, events) => {
+          if (err) {
+            console.warn('[ClaudeCompletions] watcher 错误：', err);
+            return;
+          }
+          const hasRelevantChange = events.some((e) => e.path.toLowerCase().endsWith('.md'));
+          if (!hasRelevantChange) return;
+          scheduleRefresh();
+        },
+        {
+          // Use native backend on Windows to avoid requiring an external watchman binary.
+          backend: process.platform === 'win32' ? 'windows' : undefined,
         }
-        const hasRelevantChange = events.some((e) => e.path.toLowerCase().endsWith('.md'));
-        if (!hasRelevantChange) return;
-        scheduleRefresh();
-      });
+      );
       subscriptions.push(sub);
     } catch (err) {
       console.warn('[ClaudeCompletions] watcher 启动失败：', dir, err);

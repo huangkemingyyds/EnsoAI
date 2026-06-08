@@ -42,7 +42,7 @@ import { useWorktreeActivityStore } from '@/stores/worktreeActivity';
 import { AgentGroup } from './AgentGroup';
 import { AgentTerminal } from './AgentTerminal';
 import { EnhancedInput } from './EnhancedInput';
-import { EnhancedInputContainer } from './EnhancedInputContainer';
+import { EnhancedInputContainer, EnhancedInputEntryPoint } from './EnhancedInputContainer';
 import { QuickTerminalModal } from './QuickTerminalModal';
 import type { Session } from './SessionBar';
 import { StatusLine } from './StatusLine';
@@ -221,7 +221,7 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
     hapiSettings,
     autoCreateSessionOnActivate,
     autoCreateSessionOnTempActivate,
-    agentInput = { enabled: false, autoPopupMode: 'hideWhileRunning' },
+    agentInput = { enabled: false, autoPopupMode: 'manual' },
     claudeCodeIntegration,
     terminalTheme,
   } = useSettingsStore();
@@ -319,7 +319,7 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
 
   // Enhanced input state actions from store
   const setEnhancedInputOpen = useAgentSessionsStore((state) => state.setEnhancedInputOpen);
-  const _getEnhancedInputState = useAgentSessionsStore((state) => state.getEnhancedInputState);
+  const getEnhancedInputState = useAgentSessionsStore((state) => state.getEnhancedInputState);
 
   // Group states from store (persists across component remounts)
   const worktreeGroupStates = useAgentSessionsStore((state) => state.groupStates);
@@ -845,7 +845,7 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
 
   // Enhanced input sender ref (unchanged)
   const enhancedInputSenderRef = useRef<
-    Map<string, (content: string, imagePaths: string[]) => void>
+    Map<string, (content: string, imagePaths: string[]) => Promise<boolean>>
   >(new Map());
 
   // 监听 Claude stop hook 通知，精确更新 output state 并发送完成通知
@@ -858,6 +858,12 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
         customAgents,
         agentSettings,
       });
+      const enhancedInputState = getEnhancedInputState(session.id);
+      const hasDraft =
+        enhancedInputState.content.trim().length > 0 || enhancedInputState.imagePaths.length > 0;
+      if (hasDraft || enhancedInputState.autoOpenSuppressed) {
+        return false;
+      }
 
       return (
         shouldAutoOpenEnhancedInput({
@@ -868,7 +874,14 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
         }) && activityState !== 'waiting_input'
       );
     },
-    [agentInput.enabled, agentInput.autoPopupMode, customAgents, agentSettings, getActivityState]
+    [
+      agentInput.enabled,
+      agentInput.autoPopupMode,
+      customAgents,
+      agentSettings,
+      getActivityState,
+      getEnhancedInputState,
+    ]
   );
 
   const handleAgentCompletionSignal = useCallback(
@@ -1176,9 +1189,9 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
   );
 
   const handleFirstPromptLaunch = useCallback(
-    (content: string, imagePaths: string[]) => {
+    (content: string, imagePaths: string[]): boolean => {
       const trimmedContent = content.trim();
-      if (!trimmedContent && imagePaths.length === 0) return;
+      if (!trimmedContent && imagePaths.length === 0) return false;
 
       const agentId = firstPromptAgentId;
       const target = resolveAgentLaunchTarget({ agentId, customAgents, agentSettings });
@@ -1202,7 +1215,7 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
               title: t('Image input unavailable'),
               description: t('Current agent does not support image input.'),
             });
-            return;
+            return false;
           }
           pendingCommand = formatted.message;
         }
@@ -1228,6 +1241,7 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
       setFirstPromptContent('');
       setFirstPromptImages([]);
       setShowAgentMenu(false);
+      return true;
     },
     [
       firstPromptAgentId,
@@ -1711,7 +1725,6 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
                   isActive={isActive}
                   cwd={cwd}
                   slashCommandCompletionEnabled={false}
-                  isAgentRunning={false}
                 />
               </div>
             )}
@@ -2002,7 +2015,7 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
                 <EnhancedInputContainer
                   sessionId={group.activeSessionId}
                   onSend={(content, imagePaths) => {
-                    sender?.(content, imagePaths);
+                    return sender?.(content, imagePaths) ?? false;
                   }}
                   isActive={isActive}
                   slashCommandCompletionEnabled={shouldUseSlashCommandCompletion(
@@ -2010,7 +2023,14 @@ export function AgentPanel({ repoPath, cwd, isActive = false, onSwitchWorktree }
                   )}
                 />
               )}
-              {statusLineEnabled && <StatusLine sessionId={group.activeSessionId} />}
+              <StatusLine
+                sessionId={group.activeSessionId}
+                trailing={
+                  isActiveGroup && renderEnhancedInput && group.activeSessionId != null ? (
+                    <EnhancedInputEntryPoint sessionId={group.activeSessionId} />
+                  ) : null
+                }
+              />
             </GroupBottomBar>
           </div>
         );

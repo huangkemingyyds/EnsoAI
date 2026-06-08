@@ -27,7 +27,9 @@ describe('resolveAgentCapabilities', () => {
     const capabilities = resolveAgentCapabilities('codex');
 
     expect(capabilities.enhancedInput.supported).toBe(true);
-    expect(capabilities.completionDetection.outputPattern).toBe('(?m)^>\\s*$');
+    expect(capabilities.completionDetection.outputPattern).toBe(
+      '(?m)^(?:>\\s*$|\\u203a(?:\\s.*)?$)'
+    );
     expect(capabilities.hasCompletionSignal).toBe(true);
   });
 

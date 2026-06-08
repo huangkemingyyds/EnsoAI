@@ -9,6 +9,7 @@ import { useI18n } from '@/i18n';
 import { commandRegistry } from '@/lib/commandRegistry';
 import { isFocusLocked, lockFocus, unlockFocus } from '@/lib/focusLock';
 import { toLocalFileUrl } from '@/lib/localFileUrl';
+import { buildSlashCompletionResults } from '@/lib/slashCompletions';
 import { cn } from '@/lib/utils';
 import { useCompletionsStore } from '@/stores/completions';
 
@@ -20,7 +21,7 @@ function getFileName(filePath: string): string {
 interface EnhancedInputProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSend: (content: string, imagePaths: string[]) => void;
+  onSend: (content: string, imagePaths: string[]) => boolean | Promise<boolean>;
   sessionId?: string;
   /** Current content for the textarea (store-controlled) */
   content: string;
@@ -32,14 +33,14 @@ interface EnhancedInputProps {
   onImagesChange: (imagePaths: string[]) => void;
   /** Keep panel open after sending (for 'always' mode) */
   keepOpenAfterSend?: boolean;
+  /** Whether this component should call onOpenChange(false) after a successful send */
+  closeOnSend?: boolean;
   /** Whether the parent panel is active (used to trigger focus on tab switch) */
   isActive?: boolean;
   /** Working directory for file mention search */
   cwd?: string;
   /** Whether Claude slash command completion is available for this Agent Session */
   slashCommandCompletionEnabled?: boolean;
-  /** Whether the agent is currently running (outputting) */
-  isAgentRunning?: boolean;
 }
 
 const MAX_IMAGES = 5;
@@ -57,10 +58,10 @@ export function EnhancedInput({
   onContentChange,
   onImagesChange,
   keepOpenAfterSend = false,
+  closeOnSend = true,
   isActive = false,
   cwd,
   slashCommandCompletionEnabled = false,
-  isAgentRunning = false,
 }: EnhancedInputProps) {
   const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -170,48 +171,13 @@ export function EnhancedInput({
       return;
     }
 
-    const q = slashQuery.toLowerCase();
-
-    // Map local commands to completion items
-    const localItems: ClaudeSlashCompletionItem[] = commandRegistry.getAllCommands().map((cmd) => ({
-      label: `/${cmd.id}`,
-      insertText: `/${cmd.id} `,
-      kind: 'command',
-      description: cmd.metadata.description,
-      source: 'enso', // Mark as local
-    }));
-
-    const allItems = [...localItems, ...slashItems];
-
-    const results = allItems
-      .filter(
-        (item) => item.label.toLowerCase().includes(`/${q}`) || item.label.toLowerCase().includes(q)
-      )
-      .sort((a, b) => {
-        // Sort by source first: enso commands first
-        if (a.source === 'enso' && b.source !== 'enso') return -1;
-        if (a.source !== 'enso' && b.source === 'enso') return 1;
-
-        // Sort by kind next: commands before skills
-        const kindRank = (x: ClaudeSlashCompletionItem) => (x.kind === 'command' ? 0 : 1);
-        const diffKind = kindRank(a) - kindRank(b);
-        if (diffKind !== 0) return diffKind;
-
-        // Then prefer prefix matches
-        const aKey = a.label.startsWith('/')
-          ? a.label.slice(1).toLowerCase()
-          : a.label.toLowerCase();
-        const bKey = b.label.startsWith('/')
-          ? b.label.slice(1).toLowerCase()
-          : b.label.toLowerCase();
-        const aStarts = Number(aKey.startsWith(q));
-        const bStarts = Number(bKey.startsWith(q));
-        if (aStarts !== bStarts) return bStarts - aStarts;
-        return aKey.localeCompare(bKey);
+    setSlashResults(
+      buildSlashCompletionResults({
+        localCommands: commandRegistry.getAllCommands(),
+        slashItems,
+        query: slashQuery,
       })
-      .slice(0, 10);
-
-    setSlashResults(results);
+    );
   }, [slashQuery, slashItems]);
 
   // Insert selected mention into textarea
@@ -247,7 +213,7 @@ export function EnhancedInput({
   );
 
   const executeSlash = useCallback(
-    (item: ClaudeSlashCompletionItem) => {
+    async (item: ClaudeSlashCompletionItem) => {
       const ta = textareaRef.current;
       const cursor = ta ? ta.selectionStart : content.length;
       const text = content;
@@ -261,6 +227,7 @@ export function EnhancedInput({
       // Close the popup first to avoid flicker while sending/closing.
       setSlashQuery(null);
       setSlashResults([]);
+      onContentChange(newContent);
 
       // Auto-learn: executing a slash item should be counted in the learned cache.
       const token = newContent.match(/^\/\S+/)?.[0];
@@ -275,19 +242,31 @@ export function EnhancedInput({
         });
       }
 
-      onSend(newContent, imagePaths);
-      if (!keepOpenAfterSend) {
-        onOpenChange(false);
+      try {
+        const sent = await onSend(newContent, imagePaths);
+        if (sent && !keepOpenAfterSend && closeOnSend) {
+          onOpenChange(false);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        toastManager.add({
+          type: 'error',
+          title: t('Failed to send message'),
+          description: message,
+        });
       }
     },
     [
       content,
       imagePaths,
       keepOpenAfterSend,
+      closeOnSend,
       onOpenChange,
+      onContentChange,
       onSend,
       findSlashTokenStart,
       slashCommandCompletionEnabled,
+      t,
     ]
   );
 
@@ -395,17 +374,6 @@ export function EnhancedInput({
   // Draft is now preserved in store - no reset on close
 
   const handleSend = useCallback(async () => {
-    if (isAgentRunning) {
-      toastManager.add({
-        type: 'warning',
-        title: t('Agent is running'),
-        description: t(
-          'Please wait for the current task to complete before sending new instructions'
-        ),
-      });
-      return;
-    }
-
     const trimmed = content.trim();
     if (!trimmed && imagePaths.length === 0) return;
     try {
@@ -420,9 +388,10 @@ export function EnhancedInput({
         }
       }
 
-      onSend(trimmed, imagePaths);
+      const sent = await onSend(trimmed, imagePaths);
+      if (!sent) return;
       // Only close panel if not in 'always open' mode
-      if (!keepOpenAfterSend) {
+      if (!keepOpenAfterSend && closeOnSend) {
         onOpenChange(false);
       }
     } catch (error) {
@@ -438,10 +407,10 @@ export function EnhancedInput({
     imagePaths,
     onSend,
     keepOpenAfterSend,
+    closeOnSend,
     onOpenChange,
     t,
     slashCommandCompletionEnabled,
-    isAgentRunning,
   ]);
   const getImageExtension = useCallback((file: File): string => {
     const mime = file.type.toLowerCase();
@@ -983,7 +952,7 @@ export function EnhancedInput({
                 onClick={() => {
                   void handleSend();
                 }}
-                disabled={(!content.trim() && imagePaths.length === 0) || isAgentRunning}
+                disabled={!content.trim() && imagePaths.length === 0}
                 className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:pointer-events-none disabled:opacity-40"
                 aria-label={t('Send')}
               >

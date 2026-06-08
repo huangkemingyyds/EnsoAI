@@ -18,6 +18,7 @@ import {
 import { planAgentLaunchPayload, shouldPlanAgentLaunchPayload } from '@/lib/agentLaunchPayload';
 import { processOmniInput } from '@/lib/commandProcessor';
 import { formatEnhancedInputForAgent } from '@/lib/enhancedInputFormatter';
+import { matchesCompletionOutputPattern } from '@/lib/terminalOutputPattern';
 import { type OutputState, useAgentSessionsStore } from '@/stores/agentSessions';
 import { useSettingsStore } from '@/stores/settings';
 import { useTerminalWriteStore } from '@/stores/terminalWrite';
@@ -58,7 +59,7 @@ interface AgentTerminalProps {
   onAgentCompletionSignal?: (sessionId: string) => void;
   onRegisterEnhancedInputSender?: (
     sessionId: string,
-    sender: (content: string, imagePaths: string[]) => void
+    sender: (content: string, imagePaths: string[]) => Promise<boolean>
   ) => void;
   onUnregisterEnhancedInputSender?: (sessionId: string) => void;
 }
@@ -189,8 +190,8 @@ export function AgentTerminal({
   const markSessionActive = useAgentSessionsStore((s) => s.markSessionActive);
   const clearRuntimeState = useAgentSessionsStore((s) => s.clearRuntimeState);
   const updateSession = useAgentSessionsStore((s) => s.updateSession);
-  const outputStateFromStore = useAgentSessionsStore((s) =>
-    terminalSessionId ? (s.runtimeStates[terminalSessionId]?.outputState ?? 'idle') : 'idle'
+  const suppressEnhancedInputAutoOpen = useAgentSessionsStore(
+    (s) => s.suppressEnhancedInputAutoOpen
   );
 
   // Use external control if provided, otherwise use local state.
@@ -239,7 +240,7 @@ export function AgentTerminal({
         enhancedInputShortcutEnabled &&
         agentInput.autoPopupMode === 'hideWhileRunning'
       ) {
-        onEnhancedInputOpenChange?.(false);
+        setEnhancedInputOpen(false);
       }
 
       const isStopHookSession =
@@ -260,7 +261,7 @@ export function AgentTerminal({
       setOutputState,
       enhancedInputShortcutEnabled,
       agentInput.autoPopupMode,
-      onEnhancedInputOpenChange,
+      setEnhancedInputOpen,
       claudeCodeIntegration.stopHookEnabled,
       agentCapabilities,
       onAgentCompletionSignal,
@@ -600,11 +601,8 @@ export function AgentTerminal({
         // Output Pattern Detection: Immediate idle if pattern matches (e.g. prompt)
         const { outputPattern, minRunningMs } = agentCapabilities.completionDetection;
         if (outputPattern && Date.now() - runStartTimeRef.current >= (minRunningMs ?? 1000)) {
-          // Check last 50 chars for the pattern to signal completion
-          const lastChars = outputBufferRef.current.slice(-50);
           try {
-            const regex = new RegExp(outputPattern);
-            if (regex.test(lastChars)) {
+            if (matchesCompletionOutputPattern(outputBufferRef.current, outputPattern)) {
               updateOutputState('idle');
               isMonitoringOutputRef.current = false;
               stopActivityPolling();
@@ -681,6 +679,57 @@ export function AgentTerminal({
     [onTerminalTitleChange]
   );
 
+  const activateSessionFromLine = useCallback(
+    (line: string | null) => {
+      if (hasActivatedRef.current || activated) return;
+      hasActivatedRef.current = true;
+      onActivated?.();
+      if (line && onActivatedWithFirstLine) {
+        onActivatedWithFirstLine(line);
+      }
+    },
+    [activated, onActivated, onActivatedWithFirstLine]
+  );
+
+  const armSubmissionMonitoring = useCallback(
+    (currentLine: string | null, ptyId?: string | null) => {
+      dataSinceEnterRef.current = 0;
+      runStartTimeRef.current = Date.now();
+      completionSignalSentRef.current = false;
+
+      const isSlashCommand = currentLine?.startsWith('/') ?? false;
+      lastCommandWasSlashCommand.current = isSlashCommand;
+      if (isSlashCommand && currentLine) {
+        console.log(`[AgentTerminal] Slash command: ${currentLine.split(' ')[0]}`);
+      }
+
+      if (ptyId) {
+        ptyIdRef.current = ptyId;
+      }
+
+      if (terminalSessionId && glowEffectEnabled) {
+        isMonitoringOutputRef.current = true;
+        outputSinceEnterRef.current = 0;
+        startActivityPolling();
+      }
+
+      if (enterDelayTimerRef.current) {
+        clearTimeout(enterDelayTimerRef.current);
+        enterDelayTimerRef.current = null;
+      }
+
+      if (agentNotificationEnterDelay > 0) {
+        enterDelayTimerRef.current = setTimeout(() => {
+          pendingIdleMonitorRef.current = true;
+          enterDelayTimerRef.current = null;
+        }, agentNotificationEnterDelay * 1000);
+      } else {
+        pendingIdleMonitorRef.current = true;
+      }
+    },
+    [agentNotificationEnterDelay, glowEffectEnabled, startActivityPolling, terminalSessionId]
+  );
+
   // Handle Shift+Enter for newline (Ctrl+J / LF for all agents)
   // Also detect Enter key press to mark session as activated
   const handleCustomKey = useCallback(
@@ -699,6 +748,9 @@ export function AgentTerminal({
       // Handle Ctrl+G to toggle enhanced input for agents that support it.
       if (event.ctrlKey && event.code === 'KeyG') {
         if (enhancedInputShortcutAction === 'toggle') {
+          if (enhancedInputOpen && terminalSessionId) {
+            suppressEnhancedInputAutoOpen(terminalSessionId);
+          }
           setEnhancedInputOpen(!enhancedInputOpen);
           return false; // Block the key event only when enhanced input is enabled
         }
@@ -721,65 +773,9 @@ export function AgentTerminal({
         !event.altKey &&
         !event.isComposing
       ) {
-        // Block Enter if agent is already running to prevent duplicate commands
-        if (outputStateFromStore === 'outputting') {
-          toastManager.add({
-            type: 'warning',
-            title: t('Agent is running'),
-            description: t('Please wait for the current task to complete'),
-          });
-          return false;
-        }
-
-        // First Enter activates the session; optionally pass current line for session name.
-        if (!hasActivatedRef.current && !activated) {
-          hasActivatedRef.current = true;
-          onActivated?.();
-          if (getCurrentLine && onActivatedWithFirstLine) {
-            const line = getCurrentLine();
-            if (line) onActivatedWithFirstLine(line);
-          }
-        }
-        // Reset output counter.
-        dataSinceEnterRef.current = 0;
-        runStartTimeRef.current = Date.now();
-        completionSignalSentRef.current = false;
         const currentLine = getCurrentLine?.() ?? null;
-
-        // Detect if user entered a slash command (like /clear, /help, etc.)
-        // These commands don't trigger Claude and should quickly return to idle
-        const isSlashCommand = currentLine?.startsWith('/') ?? false;
-        lastCommandWasSlashCommand.current = isSlashCommand;
-        // Note: slash command detection enables 2s idle timeout for quick return to idle
-        if (isSlashCommand && currentLine) {
-          console.log(`[AgentTerminal] Slash command: ${currentLine.split(' ')[0]}`);
-        }
-
-        // Activity state is now managed by Hook notifications (PreToolUse, Stop, AskUserQuestion)
-        // Enter event no longer sets activity state to avoid conflicts with other terminals
-
-        if (terminalSessionId && glowEffectEnabled) {
-          isMonitoringOutputRef.current = true;
-          outputSinceEnterRef.current = 0;
-          ptyIdRef.current = ptyId;
-          startActivityPolling();
-        }
-
-        // Clear any existing enter delay timer.
-        if (enterDelayTimerRef.current) {
-          clearTimeout(enterDelayTimerRef.current);
-          enterDelayTimerRef.current = null;
-        }
-        // If enter delay is configured, wait before arming idle monitor.
-        if (agentNotificationEnterDelay > 0) {
-          enterDelayTimerRef.current = setTimeout(() => {
-            pendingIdleMonitorRef.current = true;
-            enterDelayTimerRef.current = null;
-          }, agentNotificationEnterDelay * 1000);
-        } else {
-          // No delay - arm idle monitor immediately.
-          pendingIdleMonitorRef.current = true;
-        }
+        activateSessionFromLine(currentLine);
+        armSubmissionMonitoring(currentLine, ptyId);
         return true; // Let Enter through normally
       }
 
@@ -806,18 +802,14 @@ export function AgentTerminal({
       return true;
     },
     [
-      activated,
-      onActivated,
-      onActivatedWithFirstLine,
-      agentNotificationEnterDelay,
-      startActivityPolling,
-      terminalSessionId,
-      glowEffectEnabled,
+      activateSessionFromLine,
+      armSubmissionMonitoring,
       enhancedInputShortcutAction,
       enhancedInputOpen,
       setEnhancedInputOpen,
+      suppressEnhancedInputAutoOpen,
+      terminalSessionId,
       t,
-      outputStateFromStore,
     ]
   );
 
@@ -854,6 +846,9 @@ export function AgentTerminal({
     onData: handleData,
     onCustomKey: handleCustomKey,
     onTitleChange: handleTitleChange,
+    onInit: (ptyId) => {
+      ptyIdRef.current = ptyId;
+    },
     onSplit,
     onMerge,
     canMerge,
@@ -1030,74 +1025,79 @@ export function AgentTerminal({
 
   // Handle enhanced input send
   const handleEnhancedInputSend = useCallback(
-    async (content: string, imagePaths: string[]) => {
-      if (!write || !terminalSessionId) return;
+    async (content: string, imagePaths: string[]): Promise<boolean> => {
+      if (!write || !terminalSessionId) return false;
 
-      if (outputStateFromStore === 'outputting') {
-        toastManager.add({
-          type: 'warning',
-          title: t('Agent is running'),
-          description: t('Please wait for the current task to complete'),
+      try {
+        // Process input (Pipeline, @mcp, Local Commands)
+        const processed = await processOmniInput(content, imagePaths, {
+          sessionId: terminalSessionId,
+          agentCapabilities,
+          writeVirtual,
+          onResetSession,
         });
-        return;
-      }
 
-      // Process input (Pipeline, @mcp, Local Commands)
-      const processed = await processOmniInput(content, imagePaths, {
-        sessionId: terminalSessionId,
-        agentCapabilities,
-        writeVirtual,
-        onResetSession,
-      });
+        if (processed.type === 'LOCAL') {
+          await processed.executeLocal?.();
+          return true;
+        }
 
-      if (processed.type === 'LOCAL') {
-        await processed.executeLocal?.();
-        return;
-      }
-
-      const formatted = formatEnhancedInputForAgent({
-        capabilities: agentCapabilities,
-        content: processed.content,
-        imagePaths: processed.imagePaths,
-      });
-      if (!formatted.ok) {
-        toastManager.add({
-          type: 'warning',
-          title: t('Image input unavailable'),
-          description:
-            formatted.reason === 'cli_arg_requires_new_session'
-              ? t('This agent only accepts image files when starting a new session.')
-              : t('Current agent does not support image input.'),
+        const formatted = formatEnhancedInputForAgent({
+          capabilities: agentCapabilities,
+          content: processed.content,
+          imagePaths: processed.imagePaths,
         });
-        return;
+        if (!formatted.ok) {
+          toastManager.add({
+            type: 'warning',
+            title: t('Image input unavailable'),
+            description:
+              formatted.reason === 'cli_arg_requires_new_session'
+                ? t('This agent only accepts image files when starting a new session.')
+                : t('Current agent does not support image input.'),
+          });
+          return false;
+        }
+
+        const message = formatted.message;
+        activateSessionFromLine(content.trim());
+        armSubmissionMonitoring(processed.content.trim(), ptyIdRef.current);
+
+        // For multi-line content (images), write raw bracketed paste markers
+        // to PTY directly. Avoids xterm's terminal.paste() which converts
+        // \n→\r and breaks multi-image payloads.
+        const hasInternalNewlines = message.includes('\n');
+        if (hasInternalNewlines) {
+          write(`\x1b[200~${message}\x1b[201~`);
+        } else {
+          write(message);
+        }
+
+        const delay = imagePaths.length > 0 ? 300 : hasInternalNewlines ? 100 : 10;
+        setTimeout(() => write('\r'), delay);
+
+        terminal?.focus();
+        return true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        toastManager.add({
+          type: 'error',
+          title: t('Failed to send message'),
+          description: message,
+        });
+        return false;
       }
-
-      const message = formatted.message;
-
-      // For multi-line content (images), write raw bracketed paste markers
-      // to PTY directly. Avoids xterm's terminal.paste() which converts
-      // \n→\r and breaks multi-image payloads.
-      const hasInternalNewlines = message.includes('\n');
-      if (hasInternalNewlines) {
-        write(`\x1b[200~${message}\x1b[201~`);
-      } else {
-        write(message);
-      }
-
-      const delay = imagePaths.length > 0 ? 300 : hasInternalNewlines ? 100 : 10;
-      setTimeout(() => write('\r'), delay);
-
-      terminal?.focus();
     },
     [
       write,
       terminalSessionId,
       terminal,
       agentCapabilities,
-      outputStateFromStore,
       t,
       writeVirtual,
       onResetSession,
+      activateSessionFromLine,
+      armSubmissionMonitoring,
     ]
   );
 

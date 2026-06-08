@@ -13,7 +13,7 @@ import {
   Tag,
   Zap,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Popover, PopoverPopup, PopoverTrigger } from '@/components/ui/popover';
 import { toastManager } from '@/components/ui/toast';
 import { useI18n } from '@/i18n';
@@ -22,6 +22,7 @@ import { type StatusLineFieldSettings, useSettingsStore } from '@/stores/setting
 
 interface StatusLineProps {
   sessionId: string | null;
+  trailing?: ReactNode;
   onHeightChange?: (height: number) => void;
 }
 
@@ -160,7 +161,7 @@ function DirItem({ path, icon, label }: DirItemProps) {
   );
 }
 
-export function StatusLine({ sessionId, onHeightChange }: StatusLineProps) {
+export function StatusLine({ sessionId, trailing, onHeightChange }: StatusLineProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const lastReportedHeightRef = useRef<number | null>(null);
   const status = useAgentStatusStore((state) =>
@@ -344,25 +345,35 @@ export function StatusLine({ sessionId, onHeightChange }: StatusLineProps) {
 
   // Report 0 height when not rendering
   useEffect(() => {
-    if ((!statusLineEnabled || !items) && onHeightChange) {
+    if ((!statusLineEnabled || !items) && !trailing && onHeightChange) {
       if (lastReportedHeightRef.current !== 0) {
         lastReportedHeightRef.current = 0;
         onHeightChange(0);
       }
     }
-  }, [statusLineEnabled, items, onHeightChange]);
+  }, [statusLineEnabled, items, trailing, onHeightChange]);
 
-  // Don't render if status line is disabled or no data
   if (!statusLineEnabled || !items) {
+    if (trailing) {
+      return (
+        <div
+          ref={containerRef}
+          className="flex min-h-8 shrink-0 items-center justify-end border-t border-border bg-background px-3 py-1 text-muted-foreground"
+        >
+          {trailing}
+        </div>
+      );
+    }
     return null;
   }
 
   return (
     <div
       ref={containerRef}
-      className="flex min-h-8 shrink-0 flex-wrap items-center justify-center gap-x-6 gap-y-1 border-t border-border bg-background px-4 py-1 text-base text-muted-foreground"
+      className="relative flex min-h-8 shrink-0 flex-wrap items-center justify-center gap-x-6 gap-y-1 border-t border-border bg-background px-10 py-1 text-base text-muted-foreground"
     >
       {items}
+      {trailing && <div className="absolute right-3 top-1/2 -translate-y-1/2">{trailing}</div>}
     </div>
   );
 }

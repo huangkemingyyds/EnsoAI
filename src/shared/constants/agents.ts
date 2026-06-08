@@ -87,7 +87,7 @@ export const AGENT_REGISTRY: Record<string, AgentMetadata> = {
       ...DEFAULT_CAPABILITIES,
       enhancedInput: DEFAULT_ENHANCED_INPUT,
       completionDetection: {
-        outputPattern: '(?m)^>\\s*$',
+        outputPattern: '(?m)^(?:>\\s*$|\\u203a(?:\\s.*)?$)',
         idleMs: 2000,
         minRunningMs: 1000,
       },

@@ -23,6 +23,7 @@ export interface EnhancedInputState {
   open: boolean;
   content: string;
   imagePaths: string[];
+  autoOpenSuppressed: boolean;
 }
 
 // Default state object (cached and frozen to prevent accidental mutation)
@@ -30,6 +31,7 @@ const DEFAULT_ENHANCED_INPUT_STATE: EnhancedInputState = Object.freeze({
   open: false,
   content: '',
   imagePaths: [],
+  autoOpenSuppressed: false,
 });
 
 // Aggregated state for UI display
@@ -90,6 +92,7 @@ interface AgentSessionsState {
   // Enhanced input state actions
   getEnhancedInputState: (sessionId: string) => EnhancedInputState;
   setEnhancedInputOpen: (sessionId: string, open: boolean) => void;
+  suppressEnhancedInputAutoOpen: (sessionId: string) => void;
   setEnhancedInputContent: (sessionId: string, content: string) => void;
   setEnhancedInputImages: (sessionId: string, imagePaths: string[]) => void;
   clearEnhancedInput: (sessionId: string, keepOpen?: boolean) => void; // Clear content after sending
@@ -208,7 +211,12 @@ export const useAgentSessionsStore = create<AgentSessionsState>()(
           // Initialize enhanced input state for new session to ensure auto-popup works
           enhancedInputStates: {
             ...state.enhancedInputStates,
-            [session.id]: { open: false, content: '', imagePaths: [] },
+            [session.id]: {
+              open: false,
+              content: '',
+              imagePaths: [],
+              autoOpenSuppressed: false,
+            },
           },
         };
       }),
@@ -500,7 +508,22 @@ export const useAgentSessionsStore = create<AgentSessionsState>()(
         return {
           enhancedInputStates: {
             ...prev.enhancedInputStates,
-            [sessionId]: { ...current, open },
+            [sessionId]: {
+              ...current,
+              open,
+              autoOpenSuppressed: open ? false : current.autoOpenSuppressed,
+            },
+          },
+        };
+      }),
+
+    suppressEnhancedInputAutoOpen: (sessionId) =>
+      set((prev) => {
+        const current = prev.enhancedInputStates[sessionId] ?? DEFAULT_ENHANCED_INPUT_STATE;
+        return {
+          enhancedInputStates: {
+            ...prev.enhancedInputStates,
+            [sessionId]: { ...current, autoOpenSuppressed: true },
           },
         };
       }),
@@ -534,7 +557,12 @@ export const useAgentSessionsStore = create<AgentSessionsState>()(
         return {
           enhancedInputStates: {
             ...prev.enhancedInputStates,
-            [sessionId]: { open: keepOpen, content: '', imagePaths: [] },
+            [sessionId]: {
+              open: keepOpen,
+              content: '',
+              imagePaths: [],
+              autoOpenSuppressed: false,
+            },
           },
         };
       }),

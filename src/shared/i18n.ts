@@ -823,6 +823,9 @@ export const zhTranslations: Record<string, string> = {
   'Use Claude Stop hook for precise agent completion notifications':
     '使用 Claude Stop hook 获取精确的 Agent 完成通知',
   'Enhanced Input': '增强输入',
+  'Open Enhanced Input': '\u6253\u5f00\u589e\u5f3a\u8f93\u5165',
+  'Draft saved': '\u8349\u7a3f\u5df2\u4fdd\u5b58',
+  'Failed to send message': '\u53d1\u9001\u6d88\u606f\u5931\u8d25',
   'Global settings for the multi-agent enhanced input workstation':
     '多 Agent 增强输入工作台的全局设置',
   'Enable Enhanced Input': '启用增强输入',
